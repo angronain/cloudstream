@@ -23,6 +23,7 @@ import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.ui.App
 import com.lagradost.cloudstream4.desktop.update.Updater
+import com.lagradost.cloudstream4.desktop.ui.LocalMainWindow
 import com.lagradost.cloudstream4.desktop.ui.LocalWindowState
 import com.lagradost.cloudstream4.desktop.ui.Navigator
 import com.lagradost.cloudstream4.desktop.ui.Route
@@ -74,7 +75,7 @@ fun main() {
         ) {
             window.minimumSize = java.awt.Dimension(800, 560)
             CloudStreamTheme(mode = settings.theme, primaryColor = settings.primaryColor) {
-                CompositionLocalProvider(LocalFocusOutlineDefault provides false, LocalWindowState provides windowState) {
+                CompositionLocalProvider(LocalFocusOutlineDefault provides false, LocalWindowState provides windowState, LocalMainWindow provides window) {
                     App(navigator)
                 }
             }

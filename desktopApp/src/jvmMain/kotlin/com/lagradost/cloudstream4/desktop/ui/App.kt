@@ -105,12 +105,7 @@ fun App(navigator: Navigator) {
             containerColor = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {
-            if (route is Route.Player) {
-                // The player takes over the whole window
-                PlayerScreen(route)
-                return@Scaffold
-            }
-            Row(Modifier.fillMaxSize()) {
+            if (route !is Route.Player) Row(Modifier.fillMaxSize()) {
                 NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
                     Tab.entries.forEach { tab ->
                         NavigationRailItem(
@@ -144,6 +139,10 @@ fun App(navigator: Navigator) {
                     }
                 }
             }
+            // The player takes over the whole window, or plays in its own window in picture-in-picture.
+            // It stays at this one call site so moving between the two keeps the same playback going.
+            val playing = route as? Route.Player ?: navigator.pip
+            if (playing != null) PlayerScreen(playing, inPip = route !is Route.Player)
         }
     }
 }

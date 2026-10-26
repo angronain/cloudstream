@@ -62,6 +62,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
@@ -76,6 +77,7 @@ import com.lagradost.cloudstream4.desktop.generated.resources.forward
 import com.lagradost.cloudstream4.desktop.generated.resources.fullscreen
 import com.lagradost.cloudstream4.desktop.generated.resources.fullscreen_exit
 import com.lagradost.cloudstream4.desktop.generated.resources.pause
+import com.lagradost.cloudstream4.desktop.generated.resources.pip
 import com.lagradost.cloudstream4.desktop.generated.resources.play
 import com.lagradost.cloudstream4.desktop.generated.resources.replay
 import com.lagradost.cloudstream4.desktop.generated.resources.skip_next
@@ -100,6 +102,7 @@ import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 
 val LocalWindowState = compositionLocalOf<WindowState?> { null }
+val LocalMainWindow = compositionLocalOf<ComposeWindow?> { null }
 
 private val hiddenCursor by lazy {
     PointerIcon(
@@ -118,7 +121,7 @@ private fun formatTime(ms: Long): String {
 }
 
 @Composable
-fun PlayerScreen(route: Route.Player) {
+fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     val navigator = LocalNavigator.current
     val settings by AppData.settings.collectAsState()
     val playable = route.playlist[route.index]
@@ -128,7 +131,10 @@ fun PlayerScreen(route: Route.Player) {
     LaunchedEffect(viewModel) { viewModel.loadLinks() }
 
     val hasNext = route.index + 1 < route.playlist.size
-    val playNext = { navigator.replace(route.copy(index = route.index + 1)) }
+    val playNext = {
+        val next = route.copy(index = route.index + 1)
+        if (inPip) navigator.replacePip(next) else navigator.replace(next)
+    }
 
     // Starting VLC takes a moment the first time, do it off the UI thread
     val vlcAvailable by produceState(if (Vlc.isStarted) Vlc.isAvailable else null) {
@@ -140,7 +146,9 @@ fun PlayerScreen(route: Route.Player) {
     }
 
     if (settings.player == PlayerKind.External || vlcAvailable == false) {
-        ExternalPlayerScreen(route, viewModel, state, hasNext, playNext)
+        // Picture-in-picture needs the built-in player
+        if (inPip) LaunchedEffect(Unit) { navigator.closePip() }
+        else ExternalPlayerScreen(route, viewModel, state, hasNext, playNext)
         return
     }
 
@@ -191,6 +199,31 @@ fun PlayerScreen(route: Route.Player) {
     }
     DisposableEffect(engine) { onDispose { saveProgress() } }
 
+    val mainWindow = LocalMainWindow.current
+    if (inPip) {
+        PipWindow(
+            engine = engine,
+            title = playable.title,
+            seekMs = settings.seekSeconds * 1000L,
+            onExpand = {
+                navigator.expandPip()
+                mainWindow?.let {
+                    if (it.isMinimized) it.isMinimized = false
+                    it.toFront()
+                    it.requestFocus()
+                }
+            },
+            onClose = navigator::closePip,
+        )
+        return
+    }
+
+    fun enterPip() {
+        // A fullscreen main window would hide the floating one
+        if (windowState?.placement == WindowPlacement.Fullscreen) windowState.placement = WindowPlacement.Floating
+        navigator.enterPip(route)
+    }
+
     var lastInteraction by remember { mutableStateOf(System.currentTimeMillis()) }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -231,6 +264,7 @@ fun PlayerScreen(route: Route.Player) {
                     Key.M -> engine.changeVolume(if (engine.volume == 0) 100 else 0)
                     Key.F -> toggleFullscreen()
                     Key.N -> if (hasNext) playNext()
+                    Key.P -> enterPip()
                     Key.Escape -> if (isFullscreen) toggleFullscreen() else navigator.back()
                     else -> return@onKeyEvent false
                 }
@@ -386,6 +420,7 @@ fun PlayerScreen(route: Route.Player) {
                                 })
                             }
                         }
+                        ControlButton(Res.drawable.pip, "Picture-in-picture (P)") { enterPip() }
                         ControlButton(if (isFullscreen) Res.drawable.fullscreen_exit else Res.drawable.fullscreen, "Fullscreen") {
                             toggleFullscreen()
                         }
