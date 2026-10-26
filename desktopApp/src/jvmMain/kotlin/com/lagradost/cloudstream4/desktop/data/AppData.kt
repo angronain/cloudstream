@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.data
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -80,8 +81,24 @@ data class SavedSource(
     }
 }
 
-data class Position(val positionMs: Long, val durationMs: Long, val source: SavedSource? = null) {
+data class Position(
+    val positionMs: Long,
+    val durationMs: Long,
+    val source: SavedSource? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+) {
     val fraction: Float get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+
+    @get:JsonIgnore
+    val isFinished: Boolean get() = fraction >= 0.95f
+
+    /** Finished or long untouched sources are dropped, their links have expired anyway and they only take up space */
+    fun withoutStaleSource(now: Long = System.currentTimeMillis()): Position =
+        if (source != null && (isFinished || now - updatedAt > SOURCE_MAX_AGE_MS)) copy(source = null) else this
+
+    companion object {
+        const val SOURCE_MAX_AGE_MS = 120L * 24 * 60 * 60 * 1000
+    }
 }
 
 enum class PlayerKind { Internal, External }
@@ -160,6 +177,12 @@ object AppData {
     private val _positions = MutableStateFlow(store.get("positions", emptyMap<String, Position>()))
     val positions: StateFlow<Map<String, Position>> = _positions.asStateFlow()
 
+    init {
+        // Clean up the remembered sources on every launch
+        val pruned = _positions.value.mapValues { it.value.withoutStaleSource() }
+        if (pruned != _positions.value) _positions.persist("positions") { LinkedHashMap(pruned) }
+    }
+
     /** Keeps one history entry per show, the most recently watched episode, newest first */
     fun saveProgress(progress: WatchProgress, source: SavedSource? = null) {
         _history.persist("history") { list ->
@@ -170,7 +193,7 @@ object AppData {
             // LinkedHashMap keeps insertion order, so the oldest entries are dropped first
             val next = LinkedHashMap(map)
             val previous = next.remove(key)
-            next[key] = Position(progress.positionMs, progress.durationMs, source ?: previous?.source)
+            next[key] = Position(progress.positionMs, progress.durationMs, source ?: previous?.source).withoutStaleSource()
             if (next.size > 5000) next.keys.take(next.size - 5000).forEach { next.remove(it) }
             next
         }
