@@ -39,6 +39,7 @@ import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
@@ -79,19 +80,24 @@ fun PipWindow(
         // No title bar, the window draws its own rounded corners and handles moving and resizing
         undecorated = true,
         transparent = true,
+        // Compose's edge resizing for undecorated windows ignores the video's shape, the corner grip keeps it
+        resizable = false,
         // Never takes the keyboard: typing keeps going to the main window or whatever app is in front
         focusable = false,
     ) {
         // The window takes the shape of the video (16:9, 4:3, 2.39:1...) and keeps it when resized
         val aspect = engine.videoAspect ?: (16f / 9f)
-        // Only when the shape changes: each change is a blocking call into macOS, this content redraws every frame
+        // Only when the shape changes: each change is a blocking call into macOS, this content redraws every frame.
+        // Sized through the window state, setting the AWT size directly is undone by Compose.
         LaunchedEffect(aspect) {
-            window.minimumSize = Dimension(240, (240 / aspect).toInt())
-            val height = (window.width / aspect).toInt()
-            if (height != window.height) {
-                // Grows or shrinks from the top, the window sits in the bottom corner
-                window.setBounds(window.x, window.y + window.height - height, window.width, height)
+            window.minimumSize = Dimension(PIP_MIN_WIDTH, (PIP_MIN_WIDTH / aspect).toInt())
+            val width = state.size.width
+            val height = width / aspect
+            // Grows or shrinks from the top, the window sits in the bottom corner
+            (state.position as? WindowPosition.Absolute)?.let { position ->
+                state.position = WindowPosition(position.x, position.y + state.size.height - height)
             }
+            state.size = DpSize(width, height)
         }
         val visible = !state.isMinimized && !AppVisibility.isHidden
         SideEffect { engine.renderFrames = visible }
@@ -155,10 +161,14 @@ fun PipWindow(
                     .pointerInput(aspect) {
                         detectDragGestures { change, amount ->
                             change.consume()
+                            // Drag amounts are pixels, window sizes are dp (2 pixels each on Retina screens)
+                            val dx = amount.x.toDp()
+                            val dy = amount.y.toDp()
+                            val size = state.size
                             // Follows whichever way the pointer moved more, the other side keeps the video's shape
-                            val width = if (abs(amount.x) >= abs(amount.y)) window.width + amount.x else (window.height + amount.y) * aspect
-                            val clamped = maxOf(window.minimumSize.width.toFloat(), width)
-                            window.setSize(clamped.toInt(), (clamped / aspect).toInt())
+                            val width = if (abs(dx.value) >= abs(dy.value)) size.width + dx else (size.height + dy) * aspect
+                            val clamped = maxOf(PIP_MIN_WIDTH.dp, width)
+                            state.size = DpSize(clamped, clamped / aspect)
                         }
                     }
             )
@@ -167,6 +177,7 @@ fun PipWindow(
 }
 
 private val PipShape = RoundedCornerShape(12.dp)
+private const val PIP_MIN_WIDTH = 240
 
 /** Moves a window with the mouse, using screen coordinates so the window moving under the cursor does not matter */
 private class WindowDrag {

@@ -121,16 +121,15 @@ class VlcEngine(factory: MediaPlayerFactory) {
             override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
                 // Never block on the UI thread here, release() on the UI thread waits for VLC threads
                 val (width, height) = frameSize(sourceWidth, sourceHeight)
-                // A first guess until the track info below or the display size arrives
+                // A first guess until the track info arrives
                 if (sourceHeight > 0) ui { if (videoAspect == null) videoAspect = sourceWidth.toFloat() / sourceHeight }
                 frameBytes = ByteArray(width * height * 4)
                 imageInfo = ImageInfo.makeN32(width, height, ColorAlphaType.OPAQUE)
                 return RV32BufferFormat(width, height)
             }
 
-            override fun newFormatSize(bufferWidth: Int, bufferHeight: Int, displayWidth: Int, displayHeight: Int) {
-                if (displayWidth > 0 && displayHeight > 0 && !aspectFromTrack) ui { videoAspect = displayWidth.toFloat() / displayHeight }
-            }
+            // Its display size ignores non-square pixels, the shape comes from the track info instead
+            override fun newFormatSize(bufferWidth: Int, bufferHeight: Int, displayWidth: Int, displayHeight: Int) = Unit
             override fun allocatedBuffers(buffers: Array<out ByteBuffer>) = Unit
         }
 
