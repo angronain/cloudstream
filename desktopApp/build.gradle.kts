@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -167,3 +168,39 @@ compose.desktop {
         }
     }
 }
+
+// Signs the macOS app with a fixed certificate so macOS keeps the user's permissions across updates.
+// Locally the settings come from local.properties, on CI from environment variables, unsigned builds stay ad-hoc.
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
+fun signingSetting(property: String, environment: String): String? =
+    System.getenv(environment)?.takeIf { it.isNotBlank() } ?: localProperties.getProperty(property)?.takeIf { it.isNotBlank() }
+
+val macSigningIdentity = signingSetting("macSigningIdentity", "MAC_SIGNING_IDENTITY")
+val macSigningKeychain = signingSetting("macSigningKeychain", "MAC_SIGNING_KEYCHAIN")
+val macSigningKeychainPassword = signingSetting("macSigningKeychainPassword", "MAC_SIGNING_KEYCHAIN_PASSWORD")
+    ?: signingSetting("macSigningKeychainPasswordFile", "MAC_SIGNING_KEYCHAIN_PASSWORD_FILE")?.let { file(it).readText().trim() }
+
+fun Exec.macSigning(script: String, target: File) {
+    onlyIf { macSigningIdentity != null && System.getProperty("os.name").lowercase().contains("mac") }
+    commandLine("sh", file("macos/$script").absolutePath, target.absolutePath, file("macos/entitlements.plist").absolutePath)
+    environment("SIGN_IDENTITY", macSigningIdentity.orEmpty())
+    macSigningKeychain?.let { environment("SIGN_KEYCHAIN", it) }
+    macSigningKeychainPassword?.let { environment("SIGN_KEYCHAIN_PASSWORD", it) }
+}
+
+val macSignApp by tasks.registering(Exec::class) {
+    dependsOn("createDistributable")
+    macSigning("sign.sh", layout.buildDirectory.dir("compose/binaries/main/app/CloudStream.app").get().asFile)
+}
+
+// packageDmg builds and signs its own copy of the app with jpackage, so the DMG is signed again afterwards
+val macSignDmg by tasks.registering(Exec::class) {
+    dependsOn("packageDmg")
+    macSigning("sign-dmg.sh", layout.buildDirectory.dir("compose/binaries/main/dmg").get().asFile.resolve("CloudStream-$appVersion.dmg"))
+}
+
+tasks.matching { it.name == "createDistributable" }.configureEach { finalizedBy(macSignApp) }
+tasks.matching { it.name == "packageDmg" }.configureEach { finalizedBy(macSignDmg) }
