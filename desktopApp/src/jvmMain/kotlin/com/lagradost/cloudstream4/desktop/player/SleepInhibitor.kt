@@ -41,10 +41,13 @@ object SleepInhibitor {
                     val command = if (AppDirs.os == OperatingSystem.MacOS) {
                         listOf("/usr/bin/caffeinate", "-d", "-i", "-w", pid)
                     } else {
-                        listOf(
-                            "systemd-inhibit", "--what=idle:sleep", "--who=CloudStream", "--why=Playing a video",
-                            "sh", "-c", "while kill -0 $pid 2>/dev/null; do sleep 5; done",
-                        )
+                        val waitForApp = listOf("sh", "-c", "while kill -0 $pid 2>/dev/null; do sleep 5; done")
+                        // GNOME only keeps the screen on for its own session inhibitor, other desktops follow logind
+                        if (onPath("gnome-session-inhibit")) {
+                            listOf("gnome-session-inhibit", "--inhibit", "idle:suspend", "--app-id", "CloudStream", "--reason", "Playing a video") + waitForApp
+                        } else {
+                            listOf("systemd-inhibit", "--what=idle:sleep", "--who=CloudStream", "--why=Playing a video") + waitForApp
+                        }
                     }
                     process = ProcessBuilder(command).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start()
                 } else {
@@ -57,4 +60,7 @@ object SleepInhibitor {
             logError(t)
         }
     }
+
+    private fun onPath(tool: String) = System.getenv("PATH").orEmpty().split(java.io.File.pathSeparator)
+        .any { java.io.File(it, tool).canExecute() }
 }

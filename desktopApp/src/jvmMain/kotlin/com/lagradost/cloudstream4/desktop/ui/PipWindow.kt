@@ -52,6 +52,7 @@ import com.lagradost.cloudstream4.desktop.data.OperatingSystem
 import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.player.VlcEngine
 import java.awt.Cursor
+import java.awt.GraphicsDevice
 import java.awt.GraphicsEnvironment
 import java.awt.Dimension
 import java.awt.MouseInfo
@@ -60,6 +61,13 @@ import kotlin.math.abs
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
+
+private val supportsTransparency: Boolean by lazy {
+    runCatching {
+        GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
+            .isWindowTranslucencySupported(GraphicsDevice.WindowTranslucency.PERPIXEL_TRANSLUCENT)
+    }.getOrDefault(false)
+}
 
 /** Small always-on-top window that keeps playing [engine] while the main window is used for browsing */
 @OptIn(ExperimentalComposeUiApi::class)
@@ -77,13 +85,15 @@ fun PipWindow(
         create = {
             ComposeWindow().apply {
                 // On macOS a popup window is a non-activating panel: clicking it does not bring the rest of CloudStream
-                // to the front. Elsewhere it would lose its normal window behavior, so it stays a normal window there.
-                if (AppDirs.os == OperatingSystem.MacOS) type = java.awt.Window.Type.POPUP
+                // to the front. Windows and Linux activate single windows anyway, there a utility window keeps the
+                // PiP out of the taskbar and the window switcher.
+                type = if (AppDirs.os == OperatingSystem.MacOS) java.awt.Window.Type.POPUP else java.awt.Window.Type.UTILITY
                 this.title = title
                 isAlwaysOnTop = true
                 // No title bar, the window draws its own rounded corners and handles moving and resizing
                 isUndecorated = true
-                isTransparent = true
+                // Linux without a compositor cannot show see-through corners, the window is square there
+                isTransparent = supportsTransparency
                 // The corner grips resize it while keeping the video's shape
                 isResizable = false
                 // Never takes the keyboard: typing keeps going to the main window or whatever app is in front
@@ -117,7 +127,7 @@ fun PipWindow(
         Box(
             Modifier
                 .fillMaxSize()
-                .clip(PipShape)
+                .then(if (supportsTransparency) Modifier.clip(PipShape) else Modifier)
                 .background(Color.Black)
                 .onPointerEvent(PointerEventType.Enter) { hovered = true }
                 .onPointerEvent(PointerEventType.Exit) { hovered = false }
