@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -39,8 +40,6 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.rememberWindowState
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.close
 import com.lagradost.cloudstream4.desktop.generated.resources.forward
@@ -48,9 +47,12 @@ import com.lagradost.cloudstream4.desktop.generated.resources.pause
 import com.lagradost.cloudstream4.desktop.generated.resources.pip
 import com.lagradost.cloudstream4.desktop.generated.resources.play
 import com.lagradost.cloudstream4.desktop.generated.resources.replay
+import com.lagradost.cloudstream4.desktop.data.AppDirs
+import com.lagradost.cloudstream4.desktop.data.OperatingSystem
 import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.player.VlcEngine
 import java.awt.Cursor
+import java.awt.GraphicsEnvironment
 import java.awt.Dimension
 import java.awt.MouseInfo
 import java.awt.Point
@@ -69,24 +71,30 @@ fun PipWindow(
     onExpand: () -> Unit,
     onClose: () -> Unit,
 ) {
-    // Created at the video's shape when it is already known, so it does not open at 16:9 first
-    val state = rememberWindowState(
-        width = PIP_WIDTH.dp,
-        height = (PIP_WIDTH / (engine.videoAspect ?: DEFAULT_ASPECT)).dp,
-        position = WindowPosition(Alignment.BottomEnd),
-    )
+    // The window is created here instead of by Compose, its type has to be set before it exists natively
+    val initialAspect = remember { engine.videoAspect ?: DEFAULT_ASPECT }
     Window(
-        onCloseRequest = onClose,
-        state = state,
-        title = title,
-        alwaysOnTop = true,
-        // No title bar, the window draws its own rounded corners and handles moving and resizing
-        undecorated = true,
-        transparent = true,
-        // Compose's edge resizing for undecorated windows ignores the video's shape, the corner grips keep it
-        resizable = false,
-        // Never takes the keyboard: typing keeps going to the main window or whatever app is in front
-        focusable = false,
+        create = {
+            ComposeWindow().apply {
+                // On macOS a popup window is a non-activating panel: clicking it does not bring the rest of CloudStream
+                // to the front. Elsewhere it would lose its normal window behavior, so it stays a normal window there.
+                if (AppDirs.os == OperatingSystem.MacOS) type = java.awt.Window.Type.POPUP
+                this.title = title
+                isAlwaysOnTop = true
+                // No title bar, the window draws its own rounded corners and handles moving and resizing
+                isUndecorated = true
+                isTransparent = true
+                // The corner grips resize it while keeping the video's shape
+                isResizable = false
+                // Never takes the keyboard: typing keeps going to the main window or whatever app is in front
+                focusableWindowState = false
+                // Opens in the bottom right corner of the screen, at the video's shape when it is already known
+                val screen = GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
+                val height = (PIP_WIDTH / initialAspect).toInt()
+                setBounds(screen.x + screen.width - PIP_WIDTH - PIP_MARGIN, screen.y + screen.height - height - PIP_MARGIN, PIP_WIDTH, height)
+            }
+        },
+        dispose = ComposeWindow::dispose,
     ) {
         // The window takes the shape of the video (16:9, 4:3, 2.39:1...) and keeps it when resized
         val aspect = engine.videoAspect ?: DEFAULT_ASPECT
@@ -100,7 +108,7 @@ fun PipWindow(
             // Grows or shrinks from the top, the window sits in the bottom corner
             if (height != bounds.height) window.setBounds(bounds.x, bounds.y + bounds.height - height, bounds.width, height)
         }
-        val visible = !state.isMinimized && !AppVisibility.isHidden
+        val visible = !AppVisibility.isHidden
         SideEffect { engine.renderFrames = visible }
         var hovered by remember { mutableStateOf(false) }
         // Dragging anywhere moves the window, a drag must not also count as a click on the video
@@ -185,6 +193,7 @@ fun PipWindow(
 private val PipShape = RoundedCornerShape(12.dp)
 private const val PIP_WIDTH = 480
 private const val PIP_MIN_WIDTH = 240
+private const val PIP_MARGIN = 24
 private const val DEFAULT_ASPECT = 16f / 9f
 
 /** Which corner is dragged, -1 for left/top and 1 for right/bottom, the opposite corner stays in place */
