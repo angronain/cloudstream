@@ -69,6 +69,7 @@ import androidx.compose.ui.window.WindowState
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
+import com.lagradost.cloudstream4.desktop.data.SavedSource
 import com.lagradost.cloudstream4.desktop.data.WatchProgress
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.arrow_back
@@ -172,7 +173,9 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 episode = playable.episode,
                 positionMs = engine.timeMs,
                 durationMs = engine.lengthMs,
-            )
+            ),
+            // Downloads are found again without a source
+            source = state.selectedLink?.takeUnless { it.url.startsWith("file:") }?.let(SavedSource::from),
         )
     }
 

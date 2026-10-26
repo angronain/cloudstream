@@ -2,6 +2,9 @@ package com.lagradost.cloudstream4.desktop.data
 
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import com.lagradost.cloudstream4.theme.CloudStreamPrimaryColor
 import com.lagradost.cloudstream4.theme.CloudStreamThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,7 +55,32 @@ data class WatchProgress(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
-data class Position(val positionMs: Long, val durationMs: Long) {
+/** The link that was playing, so resuming starts on the same source without searching for links again */
+data class SavedSource(
+    val source: String,
+    val name: String,
+    val url: String,
+    val referer: String = "",
+    val quality: Int = 0,
+    val type: ExtractorLinkType = ExtractorLinkType.VIDEO,
+    val headers: Map<String, String> = emptyMap(),
+) {
+    /** If [link] is the same source and quality, possibly with a fresh url */
+    fun matches(link: ExtractorLink): Boolean = link.source == source && link.name == name && link.quality == quality
+
+    suspend fun toLink(): ExtractorLink = newExtractorLink(source, name, url, type) {
+        referer = this@SavedSource.referer
+        quality = this@SavedSource.quality
+        headers = this@SavedSource.headers
+    }
+
+    companion object {
+        fun from(link: ExtractorLink) =
+            SavedSource(link.source, link.name, link.url, link.referer, link.quality, link.type, link.headers)
+    }
+}
+
+data class Position(val positionMs: Long, val durationMs: Long, val source: SavedSource? = null) {
     val fraction: Float get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
 }
 
@@ -133,7 +161,7 @@ object AppData {
     val positions: StateFlow<Map<String, Position>> = _positions.asStateFlow()
 
     /** Keeps one history entry per show, the most recently watched episode, newest first */
-    fun saveProgress(progress: WatchProgress) {
+    fun saveProgress(progress: WatchProgress, source: SavedSource? = null) {
         _history.persist("history") { list ->
             listOf(progress) + list.filterNot { it.media.url == progress.media.url }.take(200)
         }
@@ -141,8 +169,8 @@ object AppData {
         _positions.persist("positions") { map ->
             // LinkedHashMap keeps insertion order, so the oldest entries are dropped first
             val next = LinkedHashMap(map)
-            next.remove(key)
-            next[key] = Position(progress.positionMs, progress.durationMs)
+            val previous = next.remove(key)
+            next[key] = Position(progress.positionMs, progress.durationMs, source ?: previous?.source)
             if (next.size > 5000) next.keys.take(next.size - 5000).forEach { next.remove(it) }
             next
         }

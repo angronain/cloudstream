@@ -12,7 +12,9 @@ import com.lagradost.cloudstream3.sortUrls
 import com.lagradost.cloudstream3.utils.DrmExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppDirs
+import com.lagradost.cloudstream4.desktop.data.SavedSource
 import com.lagradost.cloudstream4.desktop.player.StreamProxy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -74,19 +76,33 @@ class PlayerViewModel(
         return true
     }
 
+    /** Source used last time for this episode, tried first and preferred among the new links */
+    private var remembered: SavedSource? = null
+
+    /** The remembered link failed, switch to the same source as soon as the extension finds it again */
+    private var waitingForRemembered = false
+
     fun loadLinks() {
         scope.launch {
-            if (!loadDownloaded()) loadOnlineLinks()
+            if (loadDownloaded()) return@launch
+            remembered = AppData.positions.value[data]?.source
+            waitingForRemembered = false
+            // Starts playing right away, the links are still loaded in case it no longer works
+            val link = remembered?.let { runCatching { it.toLink() }.getOrNull() }
+            loadOnlineLinks(PlayerState(selectedLink = link))
         }
     }
 
-    private fun loadOnlineLinks() {
+    private fun preferredLink(links: List<ExtractorLink>): ExtractorLink? =
+        remembered?.let { saved -> links.firstOrNull(saved::matches) } ?: links.firstOrNull()
+
+    private fun loadOnlineLinks(initial: PlayerState = PlayerState()) {
         val api = APIHolder.getApiFromNameNull(apiName)
         if (api == null) {
             _state.value = PlayerState(isLoadingLinks = false, error = "The extension $apiName is not loaded")
             return
         }
-        _state.value = PlayerState()
+        _state.value = initial
         scope.launch(Dispatchers.IO) {
             try {
                 withTimeout(api.loadLinksTimeoutMs ?: 120_000L) {
@@ -102,7 +118,14 @@ class PlayerViewModel(
                             if (link.isPlayable()) {
                                 _state.update { s ->
                                     if (s.links.any { it.url == link.url }) s
-                                    else s.copy(links = sortUrls((s.links + link).toSet()))
+                                    else {
+                                        val found = waitingForRemembered && remembered?.matches(link) == true
+                                        if (found) waitingForRemembered = false
+                                        s.copy(
+                                            links = sortUrls((s.links + link).toSet()),
+                                            selectedLink = if (found) link else s.selectedLink,
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -115,18 +138,34 @@ class PlayerViewModel(
             _state.update { s ->
                 s.copy(
                     isLoadingLinks = false,
-                    selectedLink = s.selectedLink ?: s.links.firstOrNull(),
+                    selectedLink = s.selectedLink ?: preferredLink(s.links),
                     error = if (s.links.isEmpty()) "No playable links found" else null,
                 )
             }
         }
     }
 
-    fun selectLink(link: ExtractorLink) = _state.update { it.copy(selectedLink = link, error = null) }
+    fun selectLink(link: ExtractorLink) {
+        waitingForRemembered = false
+        _state.update { it.copy(selectedLink = link, error = null) }
+    }
 
     /** Called when the current link fails, moves on to the next one */
     fun nextLink(): Boolean {
         val s = _state.value
+        if (s.selectedLink != null && s.selectedLink !in s.links) {
+            // The remembered link failed, probably expired: use the same source from the new links
+            val next = remembered?.let { saved -> s.links.firstOrNull(saved::matches) }
+                ?: if (s.isLoadingLinks) null else s.links.firstOrNull()
+            waitingForRemembered = next == null && s.isLoadingLinks
+            _state.update {
+                it.copy(
+                    selectedLink = next,
+                    error = if (next == null && !it.isLoadingLinks) "None of the links could be played" else null,
+                )
+            }
+            return next != null || s.isLoadingLinks
+        }
         val index = s.links.indexOf(s.selectedLink)
         val next = s.links.getOrNull(index + 1)
         _state.update {

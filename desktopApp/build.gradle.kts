@@ -96,6 +96,10 @@ compose.desktop {
             "--enable-native-access=ALL-UNNAMED",
             "-Xmx2G",
             *extensionJvmArgs,
+            // The macOS default library path includes /Network/Library/Java/Extensions, and looking there for JNA's
+            // library makes macOS ask for network volume access on every launch. $APPDIR is set by the launcher.
+            "-Djava.library.path=\$APPDIR",
+            "-Djna.nosys=true",
         )
 
         nativeDistributions {
