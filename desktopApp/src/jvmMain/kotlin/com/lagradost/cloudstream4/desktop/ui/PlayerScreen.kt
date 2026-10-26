@@ -93,6 +93,7 @@ import com.lagradost.cloudstream4.desktop.generated.resources.speed
 import com.lagradost.cloudstream4.desktop.generated.resources.subtitles
 import com.lagradost.cloudstream4.desktop.generated.resources.volume_mute
 import com.lagradost.cloudstream4.desktop.generated.resources.volume_up
+import com.lagradost.cloudstream4.desktop.player.ActivePlayback
 import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.player.ExternalPlayer
 import com.lagradost.cloudstream4.desktop.player.SleepInhibitor
@@ -214,10 +215,20 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             if (engine.isPlaying) currentSaveProgress()
         }
     }
-    DisposableEffect(engine) { onDispose { currentSaveProgress() } }
+    DisposableEffect(engine) {
+        val save = { currentSaveProgress() }
+        ActivePlayback.save = save
+        onDispose {
+            currentSaveProgress()
+            if (ActivePlayback.save === save) ActivePlayback.save = null
+        }
+    }
 
-    // No screen dimming or sleep while the video plays, in the window or in picture-in-picture
-    LaunchedEffect(engine.isPlaying) { SleepInhibitor.setActive(engine.isPlaying) }
+    LaunchedEffect(engine.isPlaying) {
+        // No screen dimming or sleep while the video plays, in the window or in picture-in-picture
+        SleepInhibitor.setActive(engine.isPlaying)
+        if (!engine.isPlaying) currentSaveProgress()
+    }
     DisposableEffect(engine) { onDispose { SleepInhibitor.setActive(false) } }
 
     if (!inPip) {

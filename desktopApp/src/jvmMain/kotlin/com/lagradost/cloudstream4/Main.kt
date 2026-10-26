@@ -22,6 +22,7 @@ import com.lagradost.cloudstream4.compose.LocalFocusOutlineDefault
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.JsonFileStore
+import com.lagradost.cloudstream4.desktop.player.ActivePlayback
 import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.ui.App
 import com.lagradost.cloudstream4.desktop.update.Updater
@@ -43,6 +44,7 @@ fun main() {
     AppVisibility.install()
     // Covers closing the window, Cmd+Q and logging out
     Runtime.getRuntime().addShutdownHook(Thread {
+        ActivePlayback.saveNow()
         JsonFileStore.flushAll()
         Updater.installOnExitIfReady()
     })
