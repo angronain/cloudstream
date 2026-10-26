@@ -59,6 +59,8 @@ class PlayerViewModel(
     private val scope: CoroutineScope,
     private val apiName: String,
     private val data: String,
+    /** The show or movie, its last used source is preferred for episodes without one of their own */
+    private val mediaUrl: String,
 ) {
     private val _state = MutableStateFlow(PlayerState())
     val state: StateFlow<PlayerState> = _state.asStateFlow()
@@ -76,25 +78,34 @@ class PlayerViewModel(
         return true
     }
 
-    /** Source used last time for this episode, tried first and preferred among the new links */
+    /**
+     * Source used last time for this episode, or else for the show's previous episode.
+     * Preferred among the new links, so the same source keeps playing from one episode to the next.
+     */
     private var remembered: SavedSource? = null
 
-    /** The remembered link failed, switch to the same source as soon as the extension finds it again */
+    /**
+     * Play the remembered source as soon as the extension finds it, without waiting for every link.
+     * Set when the episode's own remembered link failed, or when only the show's source is known.
+     */
     private var waitingForRemembered = false
 
     fun loadLinks() {
         scope.launch {
             if (loadDownloaded()) return@launch
-            remembered = AppData.positions.value[data]?.source
-            waitingForRemembered = false
-            // Starts playing right away, the links are still loaded in case it no longer works
-            val link = remembered?.let { runCatching { it.toLink() }.getOrNull() }
+            val own = AppData.positions.value[data]?.source
+            remembered = own ?: AppData.showSource(mediaUrl)
+            waitingForRemembered = own == null && remembered != null
+            // The episode's own link starts right away, the links are still loaded in case it no longer works
+            val link = own?.let { runCatching { it.toLink() }.getOrNull() }
             loadOnlineLinks(PlayerState(selectedLink = link))
         }
     }
 
-    private fun preferredLink(links: List<ExtractorLink>): ExtractorLink? =
-        remembered?.let { saved -> links.firstOrNull(saved::matches) } ?: links.firstOrNull()
+    /** Same source and quality, else the same source in another quality, else the best link */
+    private fun preferredLink(links: List<ExtractorLink>): ExtractorLink? = remembered?.let { saved ->
+        links.firstOrNull(saved::matches) ?: links.firstOrNull { it.source == saved.source && it.name == saved.name }
+    } ?: links.firstOrNull()
 
     private fun loadOnlineLinks(initial: PlayerState = PlayerState()) {
         val api = APIHolder.getApiFromNameNull(apiName)

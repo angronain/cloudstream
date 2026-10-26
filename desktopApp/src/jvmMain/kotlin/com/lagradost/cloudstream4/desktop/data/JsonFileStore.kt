@@ -8,13 +8,23 @@ import com.lagradost.cloudstream3.mvvm.logError
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A small persistent key-value store backed by a single JSON file.
- * Every write is flushed to disk atomically, the data sets are small enough for this to be fine.
+ * Changes are written in the background at most once per [SAVE_DELAY_MS], playback saves its position
+ * every few seconds and rewriting the whole file each time would keep the disk and the UI thread busy.
+ * The file is replaced atomically, [flushAll] writes pending changes right away (used when the app quits).
  */
 class JsonFileStore(private val file: File) {
     private val lock = Any()
+    private val savePending = AtomicBoolean(false)
+
+    init {
+        stores += this
+    }
     private val root: ObjectNode = synchronized(lock) {
         try {
             if (file.exists()) mapper.readTree(file) as? ObjectNode else null
@@ -45,8 +55,8 @@ class JsonFileStore(private val file: File) {
     fun set(key: String, value: Any?) {
         synchronized(lock) {
             if (value == null) root.remove(key) else root.set<JsonNode>(key, mapper.valueToTree(value))
-            save()
         }
+        scheduleSave()
     }
 
     fun remove(key: String) = set(key, null)
@@ -54,18 +64,43 @@ class JsonFileStore(private val file: File) {
     fun clear() {
         synchronized(lock) {
             root.removeAll()
-            save()
         }
+        scheduleSave()
     }
 
-    private fun save() {
+    private fun scheduleSave() {
+        if (savePending.compareAndSet(false, true)) writer.schedule(Runnable { save() }, SAVE_DELAY_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /** Writes pending changes now, on the calling thread */
+    fun flush() {
+        if (savePending.get()) save()
+    }
+
+    private val fileLock = Any()
+
+    private fun save(): Unit = synchronized(fileLock) {
+        // Cleared before taking the snapshot, so changes made while writing schedule another save
+        if (!savePending.getAndSet(false)) return@synchronized
         try {
+            val bytes = synchronized(lock) { mapper.writeValueAsBytes(root) }
             file.parentFile?.mkdirs()
             val temp = File(file.path + ".tmp")
-            mapper.writerWithDefaultPrettyPrinter().writeValue(temp, root)
-            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            temp.writeBytes(bytes)
+            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         } catch (t: Throwable) {
             logError(t)
         }
+    }
+
+    companion object {
+        private const val SAVE_DELAY_MS = 1_000L
+        private val stores = java.util.concurrent.CopyOnWriteArrayList<JsonFileStore>()
+        private val writer = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "JsonFileStore").apply { isDaemon = true }
+        }
+
+        /** Writes every store's pending changes now, on the calling thread */
+        fun flushAll() = stores.forEach { it.flush() }
     }
 }

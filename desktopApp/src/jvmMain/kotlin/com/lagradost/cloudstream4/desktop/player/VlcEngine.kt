@@ -18,6 +18,7 @@ import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallback
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat
+import java.awt.GraphicsEnvironment
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
@@ -95,15 +96,23 @@ class VlcEngine(factory: MediaPlayerFactory) {
     private val framePending = AtomicBoolean(false)
     private var released = false
 
+    /**
+     * Off while nothing shows the video (window minimized or app hidden). Every frame is copied and
+     * uploaded to the GPU, skipping that saves most of the CPU and battery the player uses, audio keeps playing.
+     */
+    @Volatile
+    var renderFrames = true
+
     private val player: EmbeddedMediaPlayer = factory.mediaPlayers().newEmbeddedMediaPlayer()
 
     init {
         val formatCallback = object : BufferFormatCallback {
             override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
                 // Never block on the UI thread here, release() on the UI thread waits for VLC threads
-                frameBytes = ByteArray(sourceWidth * sourceHeight * 4)
-                imageInfo = ImageInfo.makeN32(sourceWidth, sourceHeight, ColorAlphaType.OPAQUE)
-                return RV32BufferFormat(sourceWidth, sourceHeight)
+                val (width, height) = frameSize(sourceWidth, sourceHeight)
+                frameBytes = ByteArray(width * height * 4)
+                imageInfo = ImageInfo.makeN32(width, height, ColorAlphaType.OPAQUE)
+                return RV32BufferFormat(width, height)
             }
 
             override fun newFormatSize(bufferWidth: Int, bufferHeight: Int, displayWidth: Int, displayHeight: Int) = Unit
@@ -121,6 +130,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
                 displayWidth: Int,
                 displayHeight: Int,
             ) {
+                if (!renderFrames) return
                 // Drop frames instead of queueing them if the UI thread falls behind
                 if (!framePending.compareAndSet(false, true)) return
                 val buffer = nativeBuffers[0]
@@ -183,6 +193,25 @@ class VlcEngine(factory: MediaPlayerFactory) {
     }
 
     private fun ui(block: () -> Unit) = SwingUtilities.invokeLater(block)
+
+    /**
+     * Frames are never shown larger than the biggest screen, so bigger videos (4K on a laptop) are scaled
+     * down by VLC while it converts them anyway. Fewer pixels to copy and upload for every frame.
+     */
+    private fun frameSize(sourceWidth: Int, sourceHeight: Int): Pair<Int, Int> {
+        val screen = runCatching {
+            GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices.map { device ->
+                val config = device.defaultConfiguration
+                val bounds = config.bounds
+                (bounds.width * config.defaultTransform.scaleX).toInt() to (bounds.height * config.defaultTransform.scaleY).toInt()
+            }.maxByOrNull { (w, h) -> w.toLong() * h }?.let { (w, h) -> maxOf(w, h) to minOf(w, h) }
+        }.getOrNull() ?: return sourceWidth to sourceHeight
+        val scale = minOf(1.0, screen.first.toDouble() / sourceWidth, screen.second.toDouble() / sourceHeight)
+        if (scale >= 1.0) return sourceWidth to sourceHeight
+        // Even sizes keep VLC's chroma conversion happy
+        fun scaled(value: Int) = ((value * scale).toInt() / 2 * 2).coerceAtLeast(2)
+        return scaled(sourceWidth) to scaled(sourceHeight)
+    }
 
     private fun refreshTracks() {
         // Track queries are not allowed from the native callback thread

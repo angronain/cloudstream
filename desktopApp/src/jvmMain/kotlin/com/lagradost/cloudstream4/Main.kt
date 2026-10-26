@@ -21,6 +21,8 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.lagradost.cloudstream4.compose.LocalFocusOutlineDefault
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppDirs
+import com.lagradost.cloudstream4.desktop.data.JsonFileStore
+import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.ui.App
 import com.lagradost.cloudstream4.desktop.update.Updater
 import com.lagradost.cloudstream4.desktop.ui.LocalMainWindow
@@ -38,8 +40,12 @@ import org.jetbrains.compose.resources.stringResource
 fun main() {
     System.setProperty("apple.awt.application.name", "CloudStream")
     System.setProperty("apple.awt.application.appearance", "system")
+    AppVisibility.install()
     // Covers closing the window, Cmd+Q and logging out
-    Runtime.getRuntime().addShutdownHook(Thread { Updater.installOnExitIfReady() })
+    Runtime.getRuntime().addShutdownHook(Thread {
+        JsonFileStore.flushAll()
+        Updater.installOnExitIfReady()
+    })
 
     application {
         setSingletonImageLoaderFactory { context ->

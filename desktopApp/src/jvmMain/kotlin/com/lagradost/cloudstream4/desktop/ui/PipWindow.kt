@@ -20,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +46,7 @@ import com.lagradost.cloudstream4.desktop.generated.resources.pause
 import com.lagradost.cloudstream4.desktop.generated.resources.pip
 import com.lagradost.cloudstream4.desktop.generated.resources.play
 import com.lagradost.cloudstream4.desktop.generated.resources.replay
+import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.player.VlcEngine
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -80,6 +82,8 @@ fun PipWindow(
         },
     ) {
         window.minimumSize = Dimension(240, 135)
+        val visible = !state.isMinimized && !AppVisibility.isHidden
+        SideEffect { engine.renderFrames = visible }
         var hovered by remember { mutableStateOf(false) }
         Box(
             Modifier

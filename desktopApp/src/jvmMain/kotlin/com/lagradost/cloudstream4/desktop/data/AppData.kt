@@ -54,6 +54,8 @@ data class WatchProgress(
     val positionMs: Long = 0,
     val durationMs: Long = 0,
     val updatedAt: Long = System.currentTimeMillis(),
+    /** Source of the last watched episode, preferred for the next episodes of the show */
+    val source: SavedSource? = null,
 )
 
 /** The link that was playing, so resuming starts on the same source without searching for links again */
@@ -181,12 +183,21 @@ object AppData {
         // Clean up the remembered sources on every launch
         val pruned = _positions.value.mapValues { it.value.withoutStaleSource() }
         if (pruned != _positions.value) _positions.persist("positions") { LinkedHashMap(pruned) }
+        val now = System.currentTimeMillis()
+        val history = _history.value.map {
+            if (it.source != null && now - it.updatedAt > Position.SOURCE_MAX_AGE_MS) it.copy(source = null) else it
+        }
+        if (history != _history.value) _history.persist("history") { history }
     }
+
+    /** Source last used for any episode of the show at [mediaUrl] */
+    fun showSource(mediaUrl: String): SavedSource? = _history.value.firstOrNull { it.media.url == mediaUrl }?.source
 
     /** Keeps one history entry per show, the most recently watched episode, newest first */
     fun saveProgress(progress: WatchProgress, source: SavedSource? = null) {
         _history.persist("history") { list ->
-            listOf(progress) + list.filterNot { it.media.url == progress.media.url }.take(200)
+            val showSource = source ?: list.firstOrNull { it.media.url == progress.media.url }?.source
+            listOf(progress.copy(source = showSource)) + list.filterNot { it.media.url == progress.media.url }.take(200)
         }
         val key = progress.episodeData ?: return
         _positions.persist("positions") { map ->

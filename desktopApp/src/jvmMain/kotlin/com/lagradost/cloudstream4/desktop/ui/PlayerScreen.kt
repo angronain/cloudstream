@@ -6,6 +6,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import kotlin.math.abs
+import kotlinx.coroutines.Job
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
@@ -41,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -87,7 +93,9 @@ import com.lagradost.cloudstream4.desktop.generated.resources.speed
 import com.lagradost.cloudstream4.desktop.generated.resources.subtitles
 import com.lagradost.cloudstream4.desktop.generated.resources.volume_mute
 import com.lagradost.cloudstream4.desktop.generated.resources.volume_up
+import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.player.ExternalPlayer
+import com.lagradost.cloudstream4.desktop.player.SleepInhibitor
 import com.lagradost.cloudstream4.desktop.player.Vlc
 import com.lagradost.cloudstream4.desktop.player.VlcEngine
 import java.awt.Cursor
@@ -127,7 +135,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     val settings by AppData.settings.collectAsState()
     val playable = route.playlist[route.index]
     val scope = rememberCoroutineScope()
-    val viewModel = remember(route) { PlayerViewModel(scope, route.media.apiName, playable.data) }
+    val viewModel = remember(route) { PlayerViewModel(scope, route.media.apiName, playable.data, route.media.url) }
     val state by viewModel.state.collectAsState()
     LaunchedEffect(viewModel) { viewModel.loadLinks() }
 
@@ -180,10 +188,14 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     }
 
     // Start (or switch) playback whenever the selected link changes, resuming where the user left off
+    // The engine is kept between episodes, its current time only carries over when switching sources
+    var engineEpisode by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(state.selectedLink) {
         val link = state.selectedLink ?: return@LaunchedEffect
         val resume = AppData.positions.value[playable.data]?.takeIf { it.fraction < 0.95f }?.positionMs ?: 0L
-        engine.play(link.playbackUrl(), if (engine.timeMs > 0) engine.timeMs else resume)
+        val sameEpisode = engineEpisode == playable.data
+        engineEpisode = playable.data
+        engine.play(link.playbackUrl(), if (sameEpisode && engine.timeMs > 0) engine.timeMs else resume)
     }
     LaunchedEffect(engine.hasError) {
         if (engine.hasError) viewModel.nextLink()
@@ -194,13 +206,24 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             if (hasNext) playNext()
         }
     }
+    // The effects below outlive episode changes, so they must save the episode playing now
+    val currentSaveProgress by rememberUpdatedState { saveProgress() }
     LaunchedEffect(engine) {
         while (true) {
             delay(5_000)
-            if (engine.isPlaying) saveProgress()
+            if (engine.isPlaying) currentSaveProgress()
         }
     }
-    DisposableEffect(engine) { onDispose { saveProgress() } }
+    DisposableEffect(engine) { onDispose { currentSaveProgress() } }
+
+    // No screen dimming or sleep while the video plays, in the window or in picture-in-picture
+    LaunchedEffect(engine.isPlaying) { SleepInhibitor.setActive(engine.isPlaying) }
+    DisposableEffect(engine) { onDispose { SleepInhibitor.setActive(false) } }
+
+    if (!inPip) {
+        val visible = windowState?.isMinimized != true && !AppVisibility.isHidden
+        SideEffect { engine.renderFrames = visible }
+    }
 
     val mainWindow = LocalMainWindow.current
     if (inPip) {
@@ -246,6 +269,52 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     }
 
     val seekMs = settings.seekSeconds * 1000L
+
+    // Two-finger swipes: horizontal seeks, vertical changes the volume. One direction is kept per swipe.
+    val swipe = remember { SwipeGesture() }
+    var swipeLabel by remember { mutableStateOf<String?>(null) }
+    var seekJob by remember { mutableStateOf<Job?>(null) }
+    var labelJob by remember { mutableStateOf<Job?>(null) }
+    fun showSwipeLabel(text: String) {
+        swipeLabel = text
+        labelJob?.cancel()
+        labelJob = scope.launch {
+            delay(900)
+            swipeLabel = null
+        }
+    }
+    fun onSwipe(delta: Offset) {
+        val now = System.currentTimeMillis()
+        if (now - swipe.lastEventAt > 300) swipe.start(engine.timeMs, engine.volume)
+        swipe.lastEventAt = now
+        if (swipe.axis == SwipeAxis.None) {
+            swipe.axis = if (abs(delta.x) > abs(delta.y)) SwipeAxis.Seek else SwipeAxis.Volume
+        }
+        when (swipe.axis) {
+            SwipeAxis.Seek -> {
+                if (engine.lengthMs <= 0) return
+                swipe.amount += delta.x * SWIPE_SEEK_MS_PER_UNIT
+                val target = (swipe.startTimeMs + swipe.amount.toLong()).coerceIn(0, engine.lengthMs)
+                val change = (target - swipe.startTimeMs) / 1000
+                showSwipeLabel("${if (change >= 0) "+" else "-"}${abs(change)}s  ${formatTime(target)}")
+                // Seeking is slow on streams, only seek once the swipe settles
+                seekJob?.cancel()
+                seekJob = scope.launch {
+                    delay(250)
+                    engine.seekTo(target)
+                }
+            }
+
+            SwipeAxis.Volume -> {
+                swipe.amount += delta.y * SWIPE_VOLUME_PER_UNIT
+                engine.changeVolume(swipe.startVolume + swipe.amount.toInt())
+                showSwipeLabel("Volume ${engine.volume}%")
+            }
+
+            SwipeAxis.None -> Unit
+        }
+    }
+
     @OptIn(ExperimentalComposeUiApi::class)
     Box(
         Modifier
@@ -254,6 +323,9 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             .focusRequester(focus)
             .focusable()
             .onPointerEvent(PointerEventType.Move) { lastInteraction = System.currentTimeMillis() }
+            .onPointerEvent(PointerEventType.Scroll) { event ->
+                event.changes.firstOrNull()?.let { onSwipe(it.scrollDelta) }
+            }
             .pointerHoverIcon(if (controlsVisible) PointerIcon.Default else hiddenCursor)
             .onKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
@@ -279,13 +351,28 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 frame,
                 contentDescription = null,
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().clickable(
+                modifier = Modifier.fillMaxSize().combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
+                    onDoubleClick = {
+                        toggleFullscreen()
+                        focus.requestFocus()
+                    },
                 ) {
                     engine.togglePause()
                     focus.requestFocus()
                 },
+            )
+        }
+
+        swipeLabel?.let { label ->
+            Text(
+                label,
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
 
@@ -433,6 +520,27 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         }
     }
 }
+
+private enum class SwipeAxis { None, Seek, Volume }
+
+private class SwipeGesture {
+    var axis = SwipeAxis.None
+    var amount = 0f
+    var startTimeMs = 0L
+    var startVolume = 0
+    var lastEventAt = 0L
+
+    fun start(timeMs: Long, volume: Int) {
+        axis = SwipeAxis.None
+        amount = 0f
+        startTimeMs = timeMs
+        startVolume = volume
+    }
+}
+
+/** A full trackpad swipe is around 20 to 40 scroll units */
+private const val SWIPE_SEEK_MS_PER_UNIT = 1_000f
+private const val SWIPE_VOLUME_PER_UNIT = -1f
 
 private val BottomFadeReversed = Brush.verticalGradient(
     listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
