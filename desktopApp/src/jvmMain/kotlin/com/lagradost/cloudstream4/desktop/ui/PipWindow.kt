@@ -23,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -97,7 +98,16 @@ fun PipWindow(
             true
         },
     ) {
-        window.minimumSize = Dimension(240, 135)
+        // The window takes the shape of the video (16:9, 4:3, 2.39:1...) and keeps it when resized
+        val aspect = engine.videoAspect ?: (16f / 9f)
+        window.minimumSize = Dimension(240, (240 / aspect).toInt())
+        LaunchedEffect(aspect) {
+            val height = (window.width / aspect).toInt()
+            if (height != window.height) {
+                // Grows or shrinks from the top, the window sits in the bottom corner
+                window.setBounds(window.x, window.y + window.height - height, window.width, height)
+            }
+        }
         val visible = !state.isMinimized && !AppVisibility.isHidden
         SideEffect { engine.renderFrames = visible }
         var hovered by remember { mutableStateOf(false) }
@@ -157,14 +167,13 @@ fun PipWindow(
                     .align(Alignment.BottomEnd)
                     .size(20.dp)
                     .pointerHoverIcon(PointerIcon(Cursor(Cursor.SE_RESIZE_CURSOR)))
-                    .pointerInput(Unit) {
+                    .pointerInput(aspect) {
                         detectDragGestures { change, amount ->
                             change.consume()
-                            val minimum = window.minimumSize
-                            window.setSize(
-                                maxOf(minimum.width, window.width + amount.x.toInt()),
-                                maxOf(minimum.height, window.height + amount.y.toInt()),
-                            )
+                            // Follows whichever way the pointer moved more, the other side keeps the video's shape
+                            val width = if (abs(amount.x) >= abs(amount.y)) window.width + amount.x else (window.height + amount.y) * aspect
+                            val clamped = maxOf(window.minimumSize.width.toFloat(), width)
+                            window.setSize(clamped.toInt(), (clamped / aspect).toInt())
                         }
                     }
             )

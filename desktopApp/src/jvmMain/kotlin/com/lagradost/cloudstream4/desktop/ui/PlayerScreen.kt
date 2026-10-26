@@ -596,7 +596,8 @@ private class SwipeGesture {
 
 /** A full trackpad swipe is around 20 to 40 scroll units */
 private const val SWIPE_SEEK_MS_PER_UNIT = 1_000f
-private const val SWIPE_VOLUME_PER_UNIT = -1f
+// Swiping up raises the volume
+private const val SWIPE_VOLUME_PER_UNIT = 1f
 
 private val BottomFadeReversed = Brush.verticalGradient(
     listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)

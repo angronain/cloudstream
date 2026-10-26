@@ -82,6 +82,9 @@ class VlcEngine(factory: MediaPlayerFactory) {
         private set
     var hasError by mutableStateOf(false)
         private set
+    /** Width divided by height of the video, null until VLC knows the size */
+    var videoAspect by mutableStateOf<Float?>(null)
+        private set
     /** Positive plays the audio later, used to line up audio taken from another source */
     var audioDelayMs by mutableStateOf(0L)
         private set
@@ -114,6 +117,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
             override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
                 // Never block on the UI thread here, release() on the UI thread waits for VLC threads
                 val (width, height) = frameSize(sourceWidth, sourceHeight)
+                if (sourceHeight > 0) ui { videoAspect = sourceWidth.toFloat() / sourceHeight }
                 frameBytes = ByteArray(width * height * 4)
                 imageInfo = ImageInfo.makeN32(width, height, ColorAlphaType.OPAQUE)
                 return RV32BufferFormat(width, height)
