@@ -215,6 +215,32 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     LaunchedEffect(engine.hasError) {
         if (engine.hasError) viewModel.nextLink()
     }
+    // A stalled stream never reports an error, it just buffers forever: move on when the time stops advancing
+    LaunchedEffect(state.selectedLink) {
+        state.selectedLink ?: return@LaunchedEffect
+        var lastTimeMs = -1L
+        var stalledSeconds = 0
+        var started = false
+        while (true) {
+            delay(1_000)
+            // Paused by the user, not stuck
+            if (!engine.isPlaying && !engine.isBuffering) {
+                stalledSeconds = 0
+                continue
+            }
+            if (engine.timeMs != lastTimeMs) {
+                if (lastTimeMs >= 0) started = true
+                lastTimeMs = engine.timeMs
+                stalledSeconds = 0
+            } else {
+                stalledSeconds++
+            }
+            if (stalledSeconds >= if (started) STALL_MID_PLAYBACK_SECONDS else STALL_START_SECONDS) {
+                viewModel.nextLink()
+                break
+            }
+        }
+    }
     LaunchedEffect(engine.hasFinished) {
         if (engine.hasFinished) {
             saveProgress()
@@ -589,6 +615,11 @@ fun VideoFrame(frame: ImageBitmap, aspect: Float?) {
         modifier = if (aspect != null) Modifier.aspectRatio(aspect) else Modifier.fillMaxSize(),
     )
 }
+
+/** Seconds without progress before giving up on a source that never starts */
+private const val STALL_START_SECONDS = 20
+/** Seconds without progress once playing, longer since streams can briefly rebuffer */
+private const val STALL_MID_PLAYBACK_SECONDS = 30
 
 private enum class SwipeAxis { None, Seek, Volume }
 

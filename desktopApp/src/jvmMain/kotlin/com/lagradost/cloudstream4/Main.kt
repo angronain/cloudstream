@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream4
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -81,7 +82,7 @@ fun main() {
                 isBack && navigator.current !is Route.Player && navigator.back()
             },
         ) {
-            window.minimumSize = java.awt.Dimension(800, 560)
+            LaunchedEffect(Unit) { window.minimumSize = java.awt.Dimension(800, 560) }
             CloudStreamTheme(mode = settings.theme, primaryColor = settings.primaryColor) {
                 CompositionLocalProvider(LocalFocusOutlineDefault provides false, LocalWindowState provides windowState, LocalMainWindow provides window) {
                     App(navigator)

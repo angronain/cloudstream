@@ -84,8 +84,9 @@ fun PipWindow(
     ) {
         // The window takes the shape of the video (16:9, 4:3, 2.39:1...) and keeps it when resized
         val aspect = engine.videoAspect ?: (16f / 9f)
-        window.minimumSize = Dimension(240, (240 / aspect).toInt())
+        // Only when the shape changes: each change is a blocking call into macOS, this content redraws every frame
         LaunchedEffect(aspect) {
+            window.minimumSize = Dimension(240, (240 / aspect).toInt())
             val height = (window.width / aspect).toInt()
             if (height != window.height) {
                 // Grows or shrinks from the top, the window sits in the bottom corner

@@ -104,6 +104,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
     @Volatile
     private var frameBytes = ByteArray(0)
     private val framePending = AtomicBoolean(false)
+    @Volatile
     private var released = false
 
     /**
@@ -213,6 +214,22 @@ class VlcEngine(factory: MediaPlayerFactory) {
     private fun ui(block: () -> Unit) = SwingUtilities.invokeLater(block)
 
     /**
+     * Runs a LibVLC call on vlcj's own thread, in order. Calls like play() or setTime() can wait until a
+     * stalled stream's network read gives up, which froze the whole UI when made on the UI thread.
+     */
+    private fun vlc(block: () -> Unit) {
+        if (released) return
+        player.submit {
+            if (released) return@submit
+            try {
+                block()
+            } catch (t: Throwable) {
+                logError(t)
+            }
+        }
+    }
+
+    /**
      * Frames are never shown larger than the biggest screen, so bigger videos (4K on a laptop) are scaled
      * down by VLC while it converts them anyway. Fewer pixels to copy and upload for every frame.
      */
@@ -277,42 +294,48 @@ class VlcEngine(factory: MediaPlayerFactory) {
         val options = buildList {
             if (startMs > 0) add(":start-time=${startMs / 1000.0}")
         }.toTypedArray()
-        player.media().play(url, *options)
-        player.audio().setVolume(volume)
+        val volume = volume
+        vlc {
+            player.media().play(url, *options)
+            player.audio().setVolume(volume)
+        }
     }
 
     fun togglePause() {
         if (hasFinished) {
             hasFinished = false
-            player.controls().setTime(0)
-            player.controls().play()
+            vlc {
+                player.controls().setTime(0)
+                player.controls().play()
+            }
         } else {
-            player.controls().pause()
+            vlc { player.controls().pause() }
         }
     }
 
-    fun setPaused(paused: Boolean) = player.controls().setPause(paused)
+    fun setPaused(paused: Boolean) = vlc { player.controls().setPause(paused) }
 
     fun seekTo(ms: Long) {
         val clamped = if (lengthMs > 0) ms.coerceIn(0, lengthMs) else ms.coerceAtLeast(0)
         timeMs = clamped
-        player.controls().setTime(clamped)
+        vlc { player.controls().setTime(clamped) }
     }
 
     fun skip(ms: Long) = seekTo(timeMs + ms)
 
     fun changeVolume(value: Int) {
         volume = value.coerceIn(0, 200)
-        player.audio().setVolume(volume)
+        val volume = volume
+        vlc { player.audio().setVolume(volume) }
     }
 
     fun changeRate(value: Float) {
         rate = value
-        player.controls().setRate(value)
+        vlc { player.controls().setRate(value) }
     }
 
     fun selectAudio(id: Int) {
-        player.audio().setTrack(id)
+        vlc { player.audio().setTrack(id) }
         refreshTracks()
     }
 
@@ -321,26 +344,26 @@ class VlcEngine(factory: MediaPlayerFactory) {
      * The other stream is downloaded in full, only its audio is used.
      */
     fun addAudioSource(url: String, select: Boolean) {
-        player.media().addSlave(MediaSlaveType.AUDIO, url, select)
+        vlc { player.media().addSlave(MediaSlaveType.AUDIO, url, select) }
         refreshTracks()
     }
 
     fun changeAudioDelay(ms: Long) {
         audioDelayMs = ms
-        player.audio().setDelay(ms * 1000)
+        vlc { player.audio().setDelay(ms * 1000) }
     }
 
     fun selectSubtitle(id: Int) {
-        player.subpictures().setTrack(id)
+        vlc { player.subpictures().setTrack(id) }
         refreshTracks()
     }
 
     fun addSubtitleFile(file: File) {
-        player.subpictures().setSubTitleFile(file)
+        vlc { player.subpictures().setSubTitleFile(file) }
         refreshTracks()
     }
 
-    fun stop() = player.controls().stop()
+    fun stop() = vlc { player.controls().stop() }
 
     fun release() {
         if (released) return
