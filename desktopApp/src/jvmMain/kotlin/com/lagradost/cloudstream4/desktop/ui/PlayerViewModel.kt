@@ -16,6 +16,7 @@ import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.SavedSource
 import com.lagradost.cloudstream4.desktop.player.StreamProxy
+import com.lagradost.cloudstream4.desktop.player.Track
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +55,27 @@ fun ExtractorLink.label(): String {
 /** The url the player should open, going through the header proxy when the extension needs headers */
 fun ExtractorLink.playbackUrl(): String =
     if (headers.isEmpty() && referer.isBlank()) url else StreamProxy.proxy(url, headers, referer)
+
+/** Separate audio files some extensions provide next to the video */
+fun ExtractorLink.audioUrls(): List<String> = audioTracks.map { audio ->
+    val headers = audio.headers.orEmpty()
+    if (headers.isEmpty()) audio.url else StreamProxy.proxy(audio.url, headers, "")
+}
+
+/** The language part of a VLC audio track description, like "eng" in "English 5.1 - [eng]" */
+private fun audioLanguage(description: String): String? {
+    val bracket = description.substringAfterLast('[', "").substringBefore(']').trim()
+    val language = bracket.ifBlank { description.substringBefore(" - ").trim() }.lowercase()
+    // "Track 2" says nothing about the language
+    return language.takeUnless { it.isBlank() || it.startsWith("track") }
+}
+
+/** The track matching the user's [preferred] description, else one in the same language */
+fun pickAudioTrack(tracks: List<Track>, preferred: String): Track? {
+    val real = tracks.filter { it.id >= 0 }
+    return real.firstOrNull { it.name == preferred }
+        ?: audioLanguage(preferred)?.let { language -> real.firstOrNull { audioLanguage(it.name) == language } }
+}
 
 class PlayerViewModel(
     private val scope: CoroutineScope,

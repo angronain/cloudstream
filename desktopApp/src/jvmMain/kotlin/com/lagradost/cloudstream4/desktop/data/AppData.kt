@@ -210,6 +210,22 @@ object AppData {
         }
     }
 
+    /** Audio track descriptions the user picked, per show url, "" holds the last one picked anywhere */
+    private val _audioPreferences = MutableStateFlow(store.get("audioPreferences", emptyMap<String, String>()))
+
+    /** The audio track to prefer for the show at [mediaUrl], the show's own choice first */
+    fun audioPreference(mediaUrl: String): String? = _audioPreferences.value.let { it[mediaUrl] ?: it[""] }
+
+    fun setAudioPreference(mediaUrl: String, description: String) = _audioPreferences.persist("audioPreferences") { map ->
+        // LinkedHashMap keeps insertion order, so the oldest shows are dropped first
+        val next = LinkedHashMap(map)
+        next.remove(mediaUrl)
+        next[mediaUrl] = description
+        next[""] = description
+        if (next.size > 1000) next.keys.filter { it.isNotEmpty() }.take(next.size - 1000).forEach { next.remove(it) }
+        next
+    }
+
     fun removeHistory(url: String) = _history.persist("history") { list -> list.filterNot { it.media.url == url } }
 
     fun clearHistory() = _history.persist("history") { emptyList() }

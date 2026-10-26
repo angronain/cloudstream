@@ -31,6 +31,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -197,6 +198,17 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         val sameEpisode = engineEpisode == playable.data
         engineEpisode = playable.data
         engine.play(link.playbackUrl(), if (sameEpisode && engine.timeMs > 0) engine.timeMs else resume)
+        link.audioUrls().forEach { engine.addAudioSource(it, select = false) }
+    }
+
+    // Switches to the audio track the user picked before (for this show, else anywhere), once per link
+    var audioAppliedFor by remember { mutableStateOf<ExtractorLink?>(null) }
+    LaunchedEffect(engine.audioTracks, state.selectedLink) {
+        val link = state.selectedLink ?: return@LaunchedEffect
+        if (audioAppliedFor === link || engine.audioTracks.count { it.id >= 0 } < 2) return@LaunchedEffect
+        audioAppliedFor = link
+        val preferred = AppData.audioPreference(route.media.url) ?: return@LaunchedEffect
+        pickAudioTrack(engine.audioTracks, preferred)?.takeIf { it.id != engine.audioTrack }?.let { engine.selectAudio(it.id) }
     }
     LaunchedEffect(engine.hasError) {
         if (engine.hasError) viewModel.nextLink()
@@ -500,7 +512,8 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 )
                             }
                         }
-                        if (engine.audioTracks.size > 2) {
+                        val otherSources = state.links.filter { it !== state.selectedLink && it.url != state.selectedLink?.url }
+                        if (engine.audioTracks.size > 2 || otherSources.isNotEmpty() || engine.audioDelayMs != 0L) {
                             MenuButton(Res.drawable.audio, "Audio") { close ->
                                 engine.audioTracks.filter { it.id >= 0 }.forEach { track ->
                                     DropdownMenuItem(
@@ -508,8 +521,40 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                         onClick = {
                                             close()
                                             engine.selectAudio(track.id)
+                                            AppData.setAudioPreference(route.media.url, track.name)
                                         },
                                     )
+                                }
+                                // Lines up audio taken from another source, the menu stays open while adjusting
+                                DropdownMenuItem(
+                                    text = { Text("Audio delay ${if (engine.audioDelayMs > 0) "+" else ""}${engine.audioDelayMs} ms") },
+                                    onClick = {},
+                                    enabled = false,
+                                )
+                                Row(Modifier.padding(horizontal = 8.dp)) {
+                                    listOf(-500L, -100L, 100L, 500L).forEach { step ->
+                                        TextButton(onClick = { engine.changeAudioDelay(engine.audioDelayMs + step) }) {
+                                            Text(if (step > 0) "+$step" else "$step")
+                                        }
+                                    }
+                                    TextButton(onClick = { engine.changeAudioDelay(0) }, enabled = engine.audioDelayMs != 0L) { Text("Reset") }
+                                }
+                                if (otherSources.isNotEmpty()) {
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = { Text("Audio from another source (also streams its video)") },
+                                        onClick = {},
+                                        enabled = false,
+                                    )
+                                    otherSources.forEach { link ->
+                                        DropdownMenuItem(
+                                            text = { Text(link.label()) },
+                                            onClick = {
+                                                close()
+                                                engine.addAudioSource(link.playbackUrl(), select = true)
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }

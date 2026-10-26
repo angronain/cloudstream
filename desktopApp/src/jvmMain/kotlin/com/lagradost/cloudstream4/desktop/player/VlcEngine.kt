@@ -10,6 +10,7 @@ import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ImageInfo
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
+import uk.co.caprica.vlcj.media.MediaSlaveType
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
@@ -80,6 +81,9 @@ class VlcEngine(factory: MediaPlayerFactory) {
     var subtitleTrack by mutableStateOf(-1)
         private set
     var hasError by mutableStateOf(false)
+        private set
+    /** Positive plays the audio later, used to line up audio taken from another source */
+    var audioDelayMs by mutableStateOf(0L)
         private set
     var hasFinished by mutableStateOf(false)
         private set
@@ -235,6 +239,9 @@ class VlcEngine(factory: MediaPlayerFactory) {
         isBuffering = true
         timeMs = startMs
         lengthMs = 0
+        audioDelayMs = 0
+        audioTracks = emptyList()
+        subtitleTracks = emptyList()
         val options = buildList {
             if (startMs > 0) add(":start-time=${startMs / 1000.0}")
         }.toTypedArray()
@@ -275,6 +282,20 @@ class VlcEngine(factory: MediaPlayerFactory) {
     fun selectAudio(id: Int) {
         player.audio().setTrack(id)
         refreshTracks()
+    }
+
+    /**
+     * Adds the audio of another stream or file to the current video, VLC reads it next to the video.
+     * The other stream is downloaded in full, only its audio is used.
+     */
+    fun addAudioSource(url: String, select: Boolean) {
+        player.media().addSlave(MediaSlaveType.AUDIO, url, select)
+        refreshTracks()
+    }
+
+    fun changeAudioDelay(ms: Long) {
+        audioDelayMs = ms
+        player.audio().setDelay(ms * 1000)
     }
 
     fun selectSubtitle(id: Int) {
