@@ -14,6 +14,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -370,11 +372,8 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             }
     ) {
         engine.frame?.let { frame ->
-            Image(
-                frame,
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize().combinedClickable(
+            Box(
+                Modifier.fillMaxSize().combinedClickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onDoubleClick = {
@@ -385,7 +384,10 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                     engine.togglePause()
                     focus.requestFocus()
                 },
-            )
+                contentAlignment = Alignment.Center,
+            ) {
+                VideoFrame(frame, engine.videoAspect)
+            }
         }
 
         swipeLabel?.let { label ->
@@ -575,6 +577,17 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             }
         }
     }
+}
+
+/** Draws [frame] at the video's display shape, as large as fits, which fixes non-square pixels and padded streams */
+@Composable
+fun VideoFrame(frame: ImageBitmap, aspect: Float?) {
+    Image(
+        frame,
+        contentDescription = null,
+        contentScale = if (aspect != null) ContentScale.FillBounds else ContentScale.Fit,
+        modifier = if (aspect != null) Modifier.aspectRatio(aspect) else Modifier.fillMaxSize(),
+    )
 }
 
 private enum class SwipeAxis { None, Seek, Volume }

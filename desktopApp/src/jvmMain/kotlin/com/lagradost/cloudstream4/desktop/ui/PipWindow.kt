@@ -3,7 +3,6 @@ package com.lagradost.cloudstream4.desktop.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -34,17 +33,12 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
@@ -85,18 +79,8 @@ fun PipWindow(
         // No title bar, the window draws its own rounded corners and handles moving and resizing
         undecorated = true,
         transparent = true,
-        onPreviewKeyEvent = { event ->
-            if (event.type != KeyEventType.KeyDown) return@Window false
-            when (event.key) {
-                Key.Spacebar, Key.K -> engine.togglePause()
-                Key.DirectionLeft, Key.J -> engine.skip(-seekMs)
-                Key.DirectionRight, Key.L -> engine.skip(seekMs)
-                Key.P -> onExpand()
-                Key.Escape -> onClose()
-                else -> return@Window false
-            }
-            true
-        },
+        // Never takes the keyboard: typing keeps going to the main window or whatever app is in front
+        focusable = false,
     ) {
         // The window takes the shape of the video (16:9, 4:3, 2.39:1...) and keeps it when resized
         val aspect = engine.videoAspect ?: (16f / 9f)
@@ -124,23 +108,23 @@ fun PipWindow(
                 .onPointerEvent(PointerEventType.Move) { event -> if (event.buttons.isPrimaryPressed) drag.move(window) }
         ) {
             engine.frame?.let { frame ->
-                Image(
-                    frame,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize().clickable(
+                Box(
+                    Modifier.fillMaxSize().clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = { if (!drag.moved) engine.togglePause() },
                     ),
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    VideoFrame(frame, engine.videoAspect)
+                }
             }
             if (engine.isBuffering) CircularProgressIndicator(Modifier.align(Alignment.Center), color = Color.White)
 
             AnimatedVisibility(hovered || !engine.isPlaying, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))) {
-                    PipButton(Res.drawable.close, "Close (Esc)", Modifier.align(Alignment.TopStart).padding(4.dp), onClose)
-                    PipButton(Res.drawable.pip, "Back to the player (P)", Modifier.align(Alignment.TopEnd).padding(4.dp), onExpand)
+                    PipButton(Res.drawable.close, "Close", Modifier.align(Alignment.TopStart).padding(4.dp), onClose)
+                    PipButton(Res.drawable.pip, "Back to the player", Modifier.align(Alignment.TopEnd).padding(4.dp), onExpand)
                     Row(
                         Modifier.align(Alignment.Center),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),

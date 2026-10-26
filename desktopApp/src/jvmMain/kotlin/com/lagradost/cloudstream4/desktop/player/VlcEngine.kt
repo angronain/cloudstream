@@ -82,7 +82,10 @@ class VlcEngine(factory: MediaPlayerFactory) {
         private set
     var hasError by mutableStateOf(false)
         private set
-    /** Width divided by height of the video, null until VLC knows the size */
+    /**
+     * Width divided by height of the picture as it should be shown, null until VLC knows it.
+     * Not the stored pixel size: anamorphic videos have non-square pixels and streams are often padded (1920x1088).
+     */
     var videoAspect by mutableStateOf<Float?>(null)
         private set
     /** Positive plays the audio later, used to line up audio taken from another source */
@@ -117,13 +120,16 @@ class VlcEngine(factory: MediaPlayerFactory) {
             override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
                 // Never block on the UI thread here, release() on the UI thread waits for VLC threads
                 val (width, height) = frameSize(sourceWidth, sourceHeight)
-                if (sourceHeight > 0) ui { videoAspect = sourceWidth.toFloat() / sourceHeight }
+                // A first guess until the track info below or the display size arrives
+                if (sourceHeight > 0) ui { if (videoAspect == null) videoAspect = sourceWidth.toFloat() / sourceHeight }
                 frameBytes = ByteArray(width * height * 4)
                 imageInfo = ImageInfo.makeN32(width, height, ColorAlphaType.OPAQUE)
                 return RV32BufferFormat(width, height)
             }
 
-            override fun newFormatSize(bufferWidth: Int, bufferHeight: Int, displayWidth: Int, displayHeight: Int) = Unit
+            override fun newFormatSize(bufferWidth: Int, bufferHeight: Int, displayWidth: Int, displayHeight: Int) {
+                if (displayWidth > 0 && displayHeight > 0 && !aspectFromTrack) ui { videoAspect = displayWidth.toFloat() / displayHeight }
+            }
             override fun allocatedBuffers(buffers: Array<out ByteBuffer>) = Unit
         }
 
@@ -170,9 +176,12 @@ class VlcEngine(factory: MediaPlayerFactory) {
 
         player.videoSurface().set(factory.videoSurfaces().newVideoSurface(formatCallback, renderCallback, true))
         player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-            override fun playing(mediaPlayer: MediaPlayer) = ui {
-                isPlaying = true
-                isBuffering = false
+            override fun playing(mediaPlayer: MediaPlayer) {
+                ui {
+                    isPlaying = true
+                    isBuffering = false
+                }
+                if (!aspectFromTrack) refreshAspect()
             }
 
             override fun paused(mediaPlayer: MediaPlayer) = ui { isPlaying = false }
@@ -183,6 +192,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
             }
 
             override fun error(mediaPlayer: MediaPlayer) = ui { hasError = true }
+            override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) = refreshAspect()
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = ui { isBuffering = newCache < 100f }
             override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) = ui { timeMs = newTime }
             override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) = ui { lengthMs = newLength }
@@ -221,6 +231,22 @@ class VlcEngine(factory: MediaPlayerFactory) {
         return scaled(sourceWidth) to scaled(sourceHeight)
     }
 
+    @Volatile
+    private var aspectFromTrack = false
+
+    /** The real display shape: pixel size corrected by the sample aspect ratio of the video track */
+    private fun refreshAspect() {
+        player.submit {
+            val track = player.media().info()?.videoTracks()?.firstOrNull { it.width() > 0 && it.height() > 0 } ?: return@submit
+            val sar = if (track.sampleAspectRatio() > 0 && track.sampleAspectRatioBase() > 0) {
+                track.sampleAspectRatio().toFloat() / track.sampleAspectRatioBase()
+            } else 1f
+            val aspect = track.width() * sar / track.height()
+            aspectFromTrack = true
+            ui { videoAspect = aspect }
+        }
+    }
+
     private fun refreshTracks() {
         // Track queries are not allowed from the native callback thread
         player.submit {
@@ -244,6 +270,8 @@ class VlcEngine(factory: MediaPlayerFactory) {
         timeMs = startMs
         lengthMs = 0
         audioDelayMs = 0
+        videoAspect = null
+        aspectFromTrack = false
         audioTracks = emptyList()
         subtitleTracks = emptyList()
         val options = buildList {
