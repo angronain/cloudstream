@@ -6,12 +6,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeImageBitmap
 import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream4.desktop.data.AppLog
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ImageInfo
 import uk.co.caprica.vlcj.factory.MediaPlayerFactory
 import uk.co.caprica.vlcj.media.MediaSlaveType
 import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
+import uk.co.caprica.vlcj.log.LogLevel
+import uk.co.caprica.vlcj.log.NativeLog
 import uk.co.caprica.vlcj.player.base.MediaPlayer
 import uk.co.caprica.vlcj.player.base.MediaPlayerEventAdapter
 import uk.co.caprica.vlcj.player.embedded.EmbeddedMediaPlayer
@@ -30,16 +33,37 @@ data class Track(val id: Int, val name: String)
 object Vlc {
     /** Only finds the LibVLC libraries, without starting VLC itself, so screens can check it cheaply */
     val isInstalled: Boolean by lazy {
-        runCatching { NativeDiscovery().discover() }.onFailure { logError(it) }.getOrDefault(false)
+        runCatching {
+            val discovery = NativeDiscovery()
+            discovery.discover().also { found ->
+                AppLog.log("VLC: ${if (found) "found at ${discovery.discoveredPath()}" else "not found"}")
+            }
+        }.onFailure { logError(it) }.getOrDefault(false)
     }
+
+    // Kept so it is not garbage collected while VLC still calls it
+    private var nativeLog: NativeLog? = null
 
     /** Null if LibVLC (the VLC app) is not installed. Starting it loads every VLC plugin, so only the player uses it */
     private val factoryLazy = lazy {
         try {
             if (isInstalled) {
-                MediaPlayerFactory("--no-video-title-show", "--quiet", "--network-caching=3000", "--no-metadata-network-access")
+                AppLog.log("VLC: starting")
+                MediaPlayerFactory("--no-video-title-show", "--network-caching=3000", "--no-metadata-network-access").also { factory ->
+                    AppLog.log("VLC: started, version ${factory.application().version()}")
+                    // VLC's own warnings and errors end up in the log next to the app's
+                    nativeLog = factory.application().newLog().apply {
+                        level = LogLevel.WARNING
+                        // Warnings are frequent, after the first few only errors are kept so long sessions stay readable
+                        var warnings = 0
+                        addLogListener { level, module, _, _, _, _, _, message ->
+                            if (level == LogLevel.ERROR || warnings++ < MAX_VLC_WARNINGS) AppLog.log("VLC $level [$module] $message")
+                        }
+                    }
+                }
             } else null
         } catch (t: Throwable) {
+            AppLog.log("VLC: could not start")
             logError(t)
             null
         }
@@ -51,6 +75,8 @@ object Vlc {
     val isStarted: Boolean get() = factoryLazy.isInitialized()
 
     val isAvailable: Boolean get() = factory != null
+
+    private const val MAX_VLC_WARNINGS = 300
 }
 
 /**
@@ -58,6 +84,10 @@ object Vlc {
  * can be drawn with regular Compose UI layered on top, on every desktop platform.
  */
 class VlcEngine(factory: MediaPlayerFactory) {
+    init {
+        AppLog.log("Player: opening")
+    }
+
     var frame by mutableStateOf<ImageBitmap?>(null)
         private set
     var isPlaying by mutableStateOf(false)
@@ -121,6 +151,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
             override fun getBufferFormat(sourceWidth: Int, sourceHeight: Int): BufferFormat {
                 // Never block on the UI thread here, release() on the UI thread waits for VLC threads
                 val (width, height) = frameSize(sourceWidth, sourceHeight)
+                AppLog.log("Player: video is ${sourceWidth}x$sourceHeight, drawn at ${width}x$height")
                 // A first guess until the track info arrives
                 if (sourceHeight > 0) ui { if (videoAspect == null) videoAspect = sourceWidth.toFloat() / sourceHeight }
                 frameBytes = ByteArray(width * height * 4)
@@ -175,6 +206,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
         }
 
         player.videoSurface().set(factory.videoSurfaces().newVideoSurface(formatCallback, renderCallback, true))
+        AppLog.log("Player: video output ready")
         player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
             override fun playing(mediaPlayer: MediaPlayer) {
                 ui {
@@ -191,7 +223,10 @@ class VlcEngine(factory: MediaPlayerFactory) {
                 hasFinished = true
             }
 
-            override fun error(mediaPlayer: MediaPlayer) = ui { hasError = true }
+            override fun error(mediaPlayer: MediaPlayer) {
+                AppLog.log("Player: VLC could not play this link")
+                ui { hasError = true }
+            }
             override fun videoOutput(mediaPlayer: MediaPlayer, newCount: Int) = refreshAspect()
             override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = ui { isBuffering = newCache < 100f }
             override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) = ui { timeMs = newTime }
@@ -280,6 +315,8 @@ class VlcEngine(factory: MediaPlayerFactory) {
     }
 
     fun play(url: String, startMs: Long = 0) {
+        // Only the kind of link and its host, links often carry personal tokens
+        AppLog.log("Player: playing ${runCatching { java.net.URI(url).let { "${it.scheme}://${it.host ?: ""}" } }.getOrDefault("?")} from ${startMs / 1000}s")
         hasError = false
         hasFinished = false
         isBuffering = true

@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream4.desktop.BuildInfo
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
 import com.lagradost.cloudstream4.desktop.downloads.DownloadManager
@@ -47,6 +51,10 @@ import com.lagradost.cloudstream4.desktop.update.Updater
 import com.lagradost.cloudstream4.theme.CloudStreamPrimaryColor
 import com.lagradost.cloudstream4.theme.CloudStreamThemeMode
 import java.awt.Desktop
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import java.io.File
+import java.time.LocalDate
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
@@ -203,6 +211,35 @@ fun SettingsScreen() {
                     style = MaterialTheme.typography.bodySmall,
                     color = if (update is UpdateState.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        Section("Problems") {
+            var logStatus by remember { mutableStateOf("") }
+            Text(
+                "If something goes wrong or the app closes by itself, save the logs and send the file to whoever helps you. " +
+                    "They include the last three sessions, so it also works after restarting.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    logStatus = runCatching {
+                        val folder = listOf("Desktop", "Downloads").map { File(System.getProperty("user.home"), it) }.firstOrNull { it.isDirectory }
+                            ?: AppLog.dir
+                        val file = File(folder, "CloudStream-logs-${LocalDate.now()}.txt")
+                        file.writeText(AppLog.shareableText())
+                        runCatching { Desktop.getDesktop().open(folder) }
+                        "Saved ${file.absolutePath}"
+                    }.getOrElse { "Could not save the logs: ${it.message}" }
+                }) { Text("Save logs to a file") }
+                TextButton(onClick = {
+                    Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(AppLog.shareableText()), null)
+                    logStatus = "Copied, paste it in a message or a text file"
+                }) { Text("Copy logs") }
+                TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppLog.dir) } }) { Text("Open logs folder") }
+            }
+            if (logStatus.isNotEmpty()) {
+                Text(logStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 

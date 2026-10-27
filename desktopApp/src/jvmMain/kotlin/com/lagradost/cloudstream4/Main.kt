@@ -27,6 +27,7 @@ import com.lagradost.cloudstream4.desktop.player.ActivePlayback
 import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.ui.App
 import com.lagradost.cloudstream4.desktop.update.Updater
+import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.ui.LocalMainWindow
 import com.lagradost.cloudstream4.desktop.ui.LocalWindowState
 import com.lagradost.cloudstream4.desktop.ui.Navigator
@@ -40,6 +41,8 @@ import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
 fun main() {
+    // First, so everything after it is in the log file
+    AppLog.install()
     System.setProperty("apple.awt.application.name", "CloudStream")
     System.setProperty("apple.awt.application.appearance", "system")
     AppVisibility.install()

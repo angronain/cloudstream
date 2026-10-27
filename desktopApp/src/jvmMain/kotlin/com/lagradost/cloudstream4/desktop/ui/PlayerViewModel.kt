@@ -91,10 +91,10 @@ class PlayerViewModel(
     private suspend fun loadDownloaded(): Boolean {
         val item = DownloadManager.forEpisode(data)?.takeIf { it.status == DownloadStatus.Completed && it.file.exists() }
             ?: return false
-        val link = newExtractorLink("Downloaded", "Downloaded", item.file.toURI().toString(), ExtractorLinkType.VIDEO)
+        val link = newExtractorLink("Downloaded", "Downloaded", item.file.toPath().toUri().toString(), ExtractorLinkType.VIDEO)
         val subtitles = item.subtitlePaths.map { File(it) }.filter { it.exists() }.map { file ->
             // Files are named video.lang.ext
-            newSubtitleFile(file.name.removeSuffix(".${file.extension}").substringAfterLast('.'), file.toURI().toString())
+            newSubtitleFile(file.name.removeSuffix(".${file.extension}").substringAfterLast('.'), file.toPath().toUri().toString())
         }
         _state.value = PlayerState(links = listOf(link), subtitles = subtitles, isLoadingLinks = false, selectedLink = link)
         return true
