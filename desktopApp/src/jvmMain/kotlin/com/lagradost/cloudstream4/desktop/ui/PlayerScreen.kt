@@ -43,9 +43,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -309,7 +311,9 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             now = System.currentTimeMillis()
         }
     }
-    val controlsVisible = !engine.isPlaying || now - lastInteraction < 3_000
+    // A menu is a separate popup, the mouse moving or scrolling in it does not count as interacting with the player
+    val openMenus = remember { mutableIntStateOf(0) }
+    val controlsVisible = !engine.isPlaying || openMenus.intValue > 0 || now - lastInteraction < 3_000
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
 
@@ -501,7 +505,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         Text("${engine.volume}%", color = Color.White, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.weight(1f))
 
-                        MenuButton(Res.drawable.sources, "Sources (${state.links.size})") { close ->
+                        MenuButton(Res.drawable.sources, "Sources (${state.links.size})", openMenus) { close ->
                             if (state.isLoadingLinks) DropdownMenuItem(text = { Text("Still loading links...") }, onClick = {}, enabled = false)
                             state.links.forEach { link ->
                                 DropdownMenuItem(
@@ -513,7 +517,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 )
                             }
                         }
-                        MenuButton(Res.drawable.subtitles, "Subtitles") { close ->
+                        MenuButton(Res.drawable.subtitles, "Subtitles", openMenus) { close ->
                             DropdownMenuItem(text = { Text("Off") }, onClick = {
                                 close()
                                 engine.selectSubtitle(-1)
@@ -542,7 +546,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         }
                         val otherSources = state.links.filter { it !== state.selectedLink && it.url != state.selectedLink?.url }
                         if (engine.audioTracks.size > 2 || otherSources.isNotEmpty() || engine.audioDelayMs != 0L) {
-                            MenuButton(Res.drawable.audio, "Audio") { close ->
+                            MenuButton(Res.drawable.audio, "Audio", openMenus) { close ->
                                 engine.audioTracks.filter { it.id >= 0 }.forEach { track ->
                                     DropdownMenuItem(
                                         text = { Text(track.name, fontWeight = if (track.id == engine.audioTrack) FontWeight.Bold else null) },
@@ -586,7 +590,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 }
                             }
                         }
-                        MenuButton(Res.drawable.speed, "Speed ${engine.rate}x") { close ->
+                        MenuButton(Res.drawable.speed, "Speed ${engine.rate}x", openMenus) { close ->
                             listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { rate ->
                                 DropdownMenuItem(text = { Text("${rate}x") }, onClick = {
                                     close()
@@ -655,8 +659,18 @@ private fun ControlButton(icon: DrawableResource, description: String, onClick: 
 }
 
 @Composable
-private fun MenuButton(icon: DrawableResource, description: String, content: @Composable (close: () -> Unit) -> Unit) {
+private fun MenuButton(
+    icon: DrawableResource,
+    description: String,
+    openMenus: MutableIntState,
+    content: @Composable (close: () -> Unit) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
+    // Keeps the controls, and so this menu, shown while it is open
+    DisposableEffect(expanded) {
+        if (expanded) openMenus.intValue++
+        onDispose { if (expanded) openMenus.intValue-- }
+    }
     Box {
         TextButton(onClick = { expanded = true }) {
             Icon(painterResource(icon), null, tint = Color.White, modifier = Modifier.size(20.dp))
