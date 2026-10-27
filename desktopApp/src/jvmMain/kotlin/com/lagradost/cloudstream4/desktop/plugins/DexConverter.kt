@@ -1,11 +1,18 @@
 package com.lagradost.cloudstream4.desktop.plugins
 
 import com.googlecode.d2j.dex.Dex2jar
+import com.googlecode.d2j.dex.Dex2Asm
+import com.googlecode.d2j.dex.DexExceptionHandler
+import com.googlecode.d2j.dex.LambadaNameSafeClassAdapter
+import com.googlecode.d2j.node.DexFileNode
+import com.googlecode.d2j.reader.DexFileReader
 import com.lagradost.cloudstream4.desktop.data.AppDirs
+import com.lagradost.cloudstream4.desktop.data.AppLog
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassVisitor
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
+import org.objectweb.asm.tree.ClassNode
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -18,13 +25,22 @@ import java.util.zip.ZipOutputStream
  */
 object DexConverter {
     /** Bump when the conversion changes, older conversions are then repaired on startup */
-    const val VERSION = 2
+    const val VERSION = 3
 
     /** Conversions older than this cannot be repaired in place and are converted again from the original */
     const val RECONVERT_BELOW = 2
 
-    /** Applies the bytecode fixes of the current [VERSION] to a jar converted by an older version */
-    fun repairJar(jar: File) {
+    /**
+     * Applies the bytecode fixes of the current [VERSION] to a jar converted by an older version. Returns false,
+     * leaving the jar as it is, when it has to be converted again from the original instead.
+     */
+    fun repairJar(jar: File): Boolean {
+        val needsConversion = ZipFile(jar).use { zip ->
+            zip.entries().asSequence().any { entry ->
+                entry.name.endsWith(".class") && OversizedMethods.hasTooLargeMethod(zip.getInputStream(entry).use { it.readBytes() })
+            }
+        }
+        if (needsConversion) return false
         val temp = File.createTempFile("extension", ".jar", AppDirs.cacheDir)
         try {
             ZipOutputStream(temp.outputStream()).use { out ->
@@ -39,6 +55,7 @@ object DexConverter {
                 }
             }
             Files.move(temp.toPath(), jar.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            return true
         } finally {
             temp.delete()
         }
@@ -92,23 +109,23 @@ object DexConverter {
     }
 
     fun cs3ToJar(cs3: File): File {
-        val classesDir = Files.createTempDirectory(AppDirs.cacheDir.toPath(), "dex2jar").toFile()
         val jar = File.createTempFile("extension", ".jar", AppDirs.cacheDir)
         try {
             ZipOutputStream(jar.outputStream()).use { out ->
+                val written = HashSet<String>()
                 ZipFile(cs3).use { zip ->
                     for (entry in zip.entries()) {
                         if (entry.isDirectory) continue
                         val bytes = zip.getInputStream(entry).use { it.readBytes() }
                         if (entry.name.matches(Regex("classes\\d*\\.dex"))) {
-                            Dex2jar.from(bytes)
-                                .reUseReg(false)
-                                .topoLogicalSort()
-                                .skipDebug(false)
-                                .optimizeSynchronized(true)
-                                // Kotlin names like `constructor-impl` are valid on the JVM, renaming them breaks calls into Kotlin and the app
-                                .dontSanitizeNames(true)
-                                .to(classesDir.toPath())
+                            translate(bytes) { name, classBytes ->
+                                // A zip cannot hold the same class twice, a class in several dex files is kept once
+                                if (written.add(name)) {
+                                    out.putNextEntry(ZipEntry("$name.class"))
+                                    out.write(classBytes)
+                                    out.closeEntry()
+                                }
+                            }
                         } else if (entry.name == "manifest.json" || !entry.name.startsWith("res/")) {
                             // Keep the manifest and any plain java resources, Android resources are useless here
                             out.putNextEntry(ZipEntry(entry.name))
@@ -117,19 +134,52 @@ object DexConverter {
                         }
                     }
                 }
-
-                classesDir.walkTopDown().filter { it.isFile && it.name.endsWith(".class") }.forEach { file ->
-                    out.putNextEntry(ZipEntry(file.relativeTo(classesDir).invariantSeparatorsPath))
-                    out.write(fixLocalClasses(file.readBytes()))
-                    out.closeEntry()
-                }
             }
             return jar
         } catch (t: Throwable) {
             jar.delete()
             throw t
-        } finally {
-            classesDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * The same steps as `Dex2jar.to`, except that classes come out as ASM trees and are written here: the
+     * ASM bundled with dex2jar writes broken jumps into methods over the JVM size limit, see [OversizedMethods].
+     */
+    private fun translate(dex: ByteArray, onClass: (name: String, bytes: ByteArray) -> Unit) {
+        val dex2jar = Dex2jar.from(dex)
+            .reUseReg(false)
+            .topoLogicalSort()
+            .skipDebug(false)
+            .optimizeSynchronized(true)
+            // Kotlin names like `constructor-impl` are valid on the JVM, renaming them breaks calls into Kotlin and the app
+            .dontSanitizeNames(true)
+        val readerConfig = Dex2jar::class.java.getDeclaredField("readerConfig").apply { isAccessible = true }.getInt(dex2jar)
+        val file = DexFileNode()
+        try {
+            dex2jar.reader.accept(file, readerConfig or DexFileReader.IGNORE_READ_EXCEPTION)
+        } catch (e: Exception) {
+            dex2jar.exceptionHandler.handleFileException(e)
+        }
+        // dex2jar's own converter, it applies the options above
+        val converter = Class.forName("com.googlecode.d2j.dex.Dex2jar\$2")
+            .getDeclaredConstructor(Dex2jar::class.java, DexExceptionHandler::class.java)
+            .apply { isAccessible = true }
+            .newInstance(dex2jar, dex2jar.exceptionHandler) as Dex2Asm
+        converter.convertDex(file) {
+            val node = object : ClassNode(Opcodes.ASM9) {
+                override fun visitEnd() {
+                    super.visitEnd()
+                    try {
+                        OversizedMethods.fix(this)
+                        onClass(name, fixLocalClasses(ClassWriter(ClassWriter.COMPUTE_MAXS).also(::accept).toByteArray()))
+                    } catch (e: Exception) {
+                        // dex2jar skips a class it cannot write too
+                        AppLog.log("Could not convert extension class $name: $e")
+                    }
+                }
+            }
+            LambadaNameSafeClassAdapter(node, true)
         }
     }
 }

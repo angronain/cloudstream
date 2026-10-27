@@ -268,11 +268,15 @@ object PluginManager {
                 // Falls back to the old conversion if the repository cannot be reached
                 if (reinstall(plugin).onFailure { logError(it) }.isFailure) load(plugin)
             } else if (plugin.convertedFromDex && plugin.converterVersion < DexConverter.VERSION) {
-                val repaired = runCatching { DexConverter.repairJar(File(plugin.filePath)) }
-                    .onFailure { logError(it) }.isSuccess
-                val updated = if (repaired) plugin.copy(converterVersion = DexConverter.VERSION) else plugin
-                if (repaired) AppData.putPlugin(updated)
-                load(updated)
+                val repaired = runCatching { DexConverter.repairJar(File(plugin.filePath)) }.onFailure { logError(it) }
+                if (repaired.getOrNull() == false) {
+                    // A method too large for Java, see OversizedMethods
+                    if (reinstall(plugin).onFailure { logError(it) }.isFailure) load(plugin)
+                } else {
+                    val updated = if (repaired.isSuccess) plugin.copy(converterVersion = DexConverter.VERSION) else plugin
+                    if (repaired.isSuccess) AppData.putPlugin(updated)
+                    load(updated)
+                }
             } else {
                 load(plugin)
             }
