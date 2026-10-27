@@ -1,23 +1,12 @@
 name: Desktop Installers
 
-# Builds the desktop app installers for macOS, Windows and Linux.
-# Push a tag like `desktop-v4.8.0` to also publish them as a GitHub release.
+# Builds the desktop app installers for macOS, Windows and Linux and publishes them as a GitHub release.
+# Runs when a tag like `desktop-v4.8.0` is pushed, or by hand from the Actions tab on such a tag.
 on:
+  # Only releases build, building every branch push used up runners and risks GitHub disabling Actions on the fork
   workflow_dispatch:
   push:
-    branches: [master, desktop-port]
     tags: ["desktop-v*"]
-    paths:
-      - "desktopApp/**"
-      - "shared/**"
-      - "library/**"
-      - "gradle/**"
-      - ".github/workflows/desktop.yml"
-  pull_request:
-    paths:
-      - "desktopApp/**"
-      - "shared/**"
-      - ".github/workflows/desktop.yml"
 
 permissions:
   contents: read
