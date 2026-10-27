@@ -25,7 +25,7 @@ import java.util.zip.ZipOutputStream
  */
 object DexConverter {
     /** Bump when the conversion changes, older conversions are then repaired on startup */
-    const val VERSION = 3
+    const val VERSION = 4
 
     /** Conversions older than this cannot be repaired in place and are converted again from the original */
     const val RECONVERT_BELOW = 2
@@ -37,7 +37,7 @@ object DexConverter {
     fun repairJar(jar: File): Boolean {
         val needsConversion = ZipFile(jar).use { zip ->
             zip.entries().asSequence().any { entry ->
-                entry.name.endsWith(".class") && OversizedMethods.hasTooLargeMethod(zip.getInputStream(entry).use { it.readBytes() })
+                entry.name.endsWith(".class") && OversizedMethods.needsConversion(zip.getInputStream(entry).use { it.readBytes() })
             }
         }
         if (needsConversion) return false
