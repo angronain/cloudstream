@@ -218,7 +218,12 @@ fun MediaEntryCard(entry: MediaEntry, subtitle: String? = null, progress: Float?
 
 /** A show or movie being watched: plays from where it stopped without opening its page */
 @Composable
-fun ContinueWatchingCard(progress: WatchProgress, fraction: Float?) {
+fun ContinueWatchingCard(
+    progress: WatchProgress,
+    fraction: Float?,
+    subtitle: String? = null,
+    extraMenu: () -> List<ContextMenuItem> = { emptyList() },
+) {
     val navigator = LocalNavigator.current
     val scope = rememberCoroutineScope()
     var isPreparing by remember { mutableStateOf(false) }
@@ -236,7 +241,7 @@ fun ContinueWatchingCard(progress: WatchProgress, fraction: Float?) {
         title = progress.media.name,
         posterUrl = progress.media.posterUrl,
         headers = progress.media.posterHeaders,
-        subtitle = progress.episodeName ?: progress.media.apiName,
+        subtitle = subtitle ?: progress.episodeName ?: progress.media.apiName,
         progress = fraction,
         onPlay = ::play,
         isPreparing = isPreparing,
@@ -248,7 +253,7 @@ fun ContinueWatchingCard(progress: WatchProgress, fraction: Float?) {
                     }
                 },
                 ContextMenuItem("Remove from history") { AppData.removeHistory(progress.media.url) },
-            )
+            ) + extraMenu()
         },
         onClick = { navigator.push(Route.Result(progress.media)) },
     )

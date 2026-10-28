@@ -79,6 +79,7 @@ fun App(navigator: Navigator) {
         if (failed > 0) notify("$failed extensions failed to load, see the Extensions tab")
         // Also with update checks off, since the Intel build on Apple Silicon only gets the right build through them
         if (AppData.settings.value.checkForUpdates || MacArch.isTranslated) Updater.check()
+        NewEpisodes.checkIfDue()
     }
 
     // Offer the update once it is downloaded (or found, when automatic updates are off)

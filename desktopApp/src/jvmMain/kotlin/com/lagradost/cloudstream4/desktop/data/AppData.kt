@@ -121,6 +121,15 @@ data class Settings(
     val checkForUpdates: Boolean = true,
     /** Download updates in the background and install them on restart or quit */
     val autoUpdate: Boolean = true,
+    /** Checks the shows in the history for new episodes once a day */
+    val newEpisodeChecks: Boolean = true,
+)
+
+/** Episodes of a show at the last check, and how many appeared since the user last watched it */
+data class EpisodeCheck(
+    val count: Int,
+    val newCount: Int = 0,
+    val checkedAt: Long = System.currentTimeMillis(),
 )
 
 /**
@@ -195,6 +204,8 @@ object AppData {
 
     /** Keeps one history entry per show, the most recently watched episode, newest first */
     fun saveProgress(progress: WatchProgress, source: SavedSource? = null) {
+        // Watching the show again means its new episodes were seen
+        clearNewEpisodes(progress.media.url)
         _history.persist("history") { list ->
             val showSource = source ?: list.firstOrNull { it.media.url == progress.media.url }?.source
             listOf(progress.copy(source = showSource)) + list.filterNot { it.media.url == progress.media.url }.take(200)
@@ -230,6 +241,27 @@ object AppData {
         next[""] = description
         if (next.size > 1000) next.keys.filter { it.isNotEmpty() }.take(next.size - 1000).forEach { next.remove(it) }
         next
+    }
+
+    /** Episode counts per show url, filled by the new episode checks */
+    private val _episodeChecks = MutableStateFlow(store.get("episodeChecks", emptyMap<String, EpisodeCheck>()))
+    val episodeChecks: StateFlow<Map<String, EpisodeCheck>> = _episodeChecks.asStateFlow()
+
+    /** When the shows were last checked for new episodes */
+    var episodesCheckedAt: Long
+        get() = store.get("episodesCheckedAt", 0L)
+        set(value) = store.set("episodesCheckedAt", value)
+
+    /** Saves the episode count of a show, more episodes than at the last check are new */
+    fun recordEpisodeCount(url: String, count: Int) = _episodeChecks.persist("episodeChecks") { map ->
+        val previous = map[url]
+        val added = if (previous != null && count > previous.count) count - previous.count else 0
+        map + (url to EpisodeCheck(count, (previous?.newCount ?: 0) + added))
+    }
+
+    fun clearNewEpisodes(url: String) {
+        if ((_episodeChecks.value[url]?.newCount ?: 0) == 0) return
+        _episodeChecks.persist("episodeChecks") { map -> map[url]?.let { map + (url to it.copy(newCount = 0)) } ?: map }
     }
 
     fun removeHistory(url: String) = _history.persist("history") { list -> list.filterNot { it.media.url == url } }

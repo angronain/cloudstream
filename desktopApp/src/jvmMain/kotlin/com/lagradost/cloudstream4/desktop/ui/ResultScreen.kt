@@ -154,6 +154,18 @@ suspend fun continueRoute(progress: WatchProgress): Route.Player? {
     return Route.Player(media, response.playlist(seasons[season]), index)
 }
 
+/**
+ * How many episodes the show of [progress] has, in the dub of the last watched episode.
+ * Null if it could not be loaded or is not a show.
+ */
+suspend fun episodeCount(progress: WatchProgress): Int? {
+    val response = (load(progress.media) as? ResultState.Loaded)?.response ?: return null
+    val groups = response.episodeGroups()?.byDub?.values ?: return null
+    val dub = groups.firstOrNull { seasons -> seasons.values.any { episodes -> episodes.any { it.data == progress.episodeData } } }
+        ?: groups.maxByOrNull { seasons -> seasons.values.sumOf { it.size } }
+    return dub?.values?.sumOf { it.size }
+}
+
 fun openInBrowser(url: String) {
     try {
         Desktop.getDesktop().browse(URI(url))

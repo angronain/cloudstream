@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -141,6 +142,8 @@ fun HomeScreen(viewModel: HomeViewModel) {
     val history by AppData.history.collectAsState()
     val positions by AppData.positions.collectAsState()
     val bookmarks by AppData.bookmarks.collectAsState()
+    val episodeChecks by AppData.episodeChecks.collectAsState()
+    val newEpisodesOn = AppData.settings.collectAsState().value.newEpisodeChecks
 
     LaunchedEffect(providersVersion) { viewModel.ensureLoaded() }
     val providers = remember(providersVersion) { PluginManager.providers().filter { it.hasMainPage } }
@@ -188,8 +191,28 @@ fun HomeScreen(viewModel: HomeViewModel) {
                 if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
 
-            // Finished movies are done, finished episodes still lead to the next one
-            val watching = history.filter { it.episodeName != null || it.episodeData?.let { data -> positions[data]?.isFinished } != true }
+            val withNew = if (newEpisodesOn) history.filter { (episodeChecks[it.media.url]?.newCount ?: 0) > 0 } else emptyList()
+            if (withNew.isNotEmpty()) {
+                item {
+                    SectionTitle("New episodes")
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                        items(withNew, key = { it.media.url }) { progress ->
+                            val count = episodeChecks[progress.media.url]?.newCount ?: 0
+                            ContinueWatchingCard(
+                                progress,
+                                null,
+                                subtitle = if (count == 1) "1 new episode" else "$count new episodes",
+                                extraMenu = { listOf(ContextMenuItem("Dismiss") { AppData.clearNewEpisodes(progress.media.url) }) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Finished movies are done, finished episodes still lead to the next one. Shows with new episodes are listed above
+            val watching = history.filter {
+                (it.episodeName != null || it.episodeData?.let { data -> positions[data]?.isFinished } != true) && it !in withNew
+            }
             if (watching.isNotEmpty()) {
                 item {
                     SectionTitle("Continue watching")

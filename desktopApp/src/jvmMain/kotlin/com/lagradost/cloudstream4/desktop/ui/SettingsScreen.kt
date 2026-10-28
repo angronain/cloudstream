@@ -165,6 +165,16 @@ fun SettingsScreen() {
             ) { value -> AppData.updateSettings { it.copy(jsdelivrProxy = value) } }
         }
 
+        Section("Library") {
+            val checking by NewEpisodes.checking.collectAsState()
+            SwitchRow(
+                "Check for new episodes",
+                "Once a day, looks for new episodes of every show you watched at least one episode of and lists them on Home",
+                settings.newEpisodeChecks,
+            ) { value -> AppData.updateSettings { it.copy(newEpisodeChecks = value) } }
+            TextButton(onClick = NewEpisodes::check, enabled = !checking) { Text(if (checking) "Checking…" else "Check now") }
+        }
+
         Section("Storage") {
             Text("Data folder: ${AppDirs.dataDir.absolutePath}", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppDirs.dataDir) } }) { Text("Open data folder") }
