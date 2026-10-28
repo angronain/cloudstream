@@ -210,6 +210,12 @@ object AppData {
         }
     }
 
+    /** Marks an episode or movie as finished without changing the history order */
+    fun markWatched(episodeData: String, durationMs: Long) = _positions.persist("positions") { map ->
+        val duration = durationMs.takeIf { it > 0 } ?: 1
+        LinkedHashMap(map).apply { this[episodeData] = Position(duration, duration) }
+    }
+
     /** Audio track descriptions the user picked, per show url, "" holds the last one picked anywhere */
     private val _audioPreferences = MutableStateFlow(store.get("audioPreferences", emptyMap<String, String>()))
 

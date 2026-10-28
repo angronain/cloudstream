@@ -63,11 +63,7 @@ fun LibraryScreen() {
             when (tab) {
                 LibraryTab.Bookmarks -> items(bookmarks, key = { it.url }) { MediaEntryCard(it) }
                 LibraryTab.History -> items(history, key = { it.media.url }) { progress ->
-                    MediaEntryCard(
-                        progress.media,
-                        subtitle = progress.episodeName ?: progress.media.apiName,
-                        progress = progress.episodeData?.let { positions[it]?.fraction },
-                    )
+                    ContinueWatchingCard(progress, progress.episodeData?.let { positions[it]?.fraction })
                 }
             }
         }

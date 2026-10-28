@@ -18,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -139,6 +140,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
     val state by viewModel.state.collectAsState()
     val history by AppData.history.collectAsState()
     val positions by AppData.positions.collectAsState()
+    val bookmarks by AppData.bookmarks.collectAsState()
 
     LaunchedEffect(providersVersion) { viewModel.ensureLoaded() }
     val providers = remember(providersVersion) { PluginManager.providers().filter { it.hasMainPage } }
@@ -186,17 +188,26 @@ fun HomeScreen(viewModel: HomeViewModel) {
                 if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
 
-            if (history.isNotEmpty()) {
+            // Finished movies are done, finished episodes still lead to the next one
+            val watching = history.filter { it.episodeName != null || it.episodeData?.let { data -> positions[data]?.isFinished } != true }
+            if (watching.isNotEmpty()) {
                 item {
                     SectionTitle("Continue watching")
                     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-                        items(history.take(20), key = { it.media.url }) { progress ->
-                            MediaEntryCard(
-                                progress.media,
-                                subtitle = progress.episodeName ?: progress.media.apiName,
-                                progress = progress.episodeData?.let { positions[it]?.fraction },
-                            )
+                        items(watching.take(20), key = { it.media.url }) { progress ->
+                            ContinueWatchingCard(progress, progress.episodeData?.let { positions[it]?.fraction })
                         }
+                    }
+                }
+            }
+
+            if (bookmarks.isNotEmpty()) {
+                item {
+                    SectionTitle("Bookmarks") {
+                        TextButton(onClick = { navigator.select(Tab.Library) }) { Text("See all") }
+                    }
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                        items(bookmarks.take(20), key = { it.url }) { MediaEntryCard(it) }
                     }
                 }
             }

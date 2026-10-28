@@ -57,6 +57,7 @@ import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.MediaEntry
+import com.lagradost.cloudstream4.desktop.data.WatchProgress
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.arrow_back
 import com.lagradost.cloudstream4.desktop.generated.resources.bookmark
@@ -120,6 +121,39 @@ private suspend fun load(media: MediaEntry): ResultState {
     }
 }
 
+private fun LoadResponse.playlist(episodes: List<Episode>): List<Playable> = episodes.mapIndexed { i, episode ->
+    Playable(episode.data, "$name · ${episode.label(i)}", episode.season, episode.episode, episode.posterUrl)
+}
+
+/** Episodes this far in count as watched, the next one is played instead */
+private const val WATCHED_FRACTION = 0.9f
+
+/**
+ * The player for what [progress] was watching: the same episode where it stopped, or the next one if it was finished.
+ * Null if the show is finished or could not be loaded.
+ */
+suspend fun continueRoute(progress: WatchProgress): Route.Player? {
+    val media = progress.media
+    val data = progress.episodeData ?: return null
+    // Movies are saved without an episode name, they need no episode list
+    if (progress.episodeName == null) return Route.Player(media, listOf(Playable(data, media.name, posterUrl = media.posterUrl)), 0)
+
+    val response = (load(media) as? ResultState.Loaded)?.response ?: return null
+    val seasons = response.episodeGroups()?.byDub?.values
+        ?.firstOrNull { seasons -> seasons.values.any { episodes -> episodes.any { it.data == data } } }
+        ?.values?.toList() ?: return null
+    var season = seasons.indexOfFirst { episodes -> episodes.any { it.data == data } }
+    var index = seasons[season].indexOfFirst { it.data == data }
+    if ((AppData.positions.value[data]?.fraction ?: 0f) >= WATCHED_FRACTION) {
+        when {
+            index + 1 < seasons[season].size -> index++
+            season + 1 < seasons.size -> { season++; index = 0 }
+            else -> return null
+        }
+    }
+    return Route.Player(media, response.playlist(seasons[season]), index)
+}
+
 fun openInBrowser(url: String) {
     try {
         Desktop.getDesktop().browse(URI(url))
@@ -180,12 +214,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
     var season by remember(groups, dub) { mutableStateOf(seasons.keys.firstOrNull()) }
     val episodes = seasons[season].orEmpty()
 
-    fun playEpisodes(list: List<Episode>, index: Int) {
-        val playlist = list.mapIndexed { i, episode ->
-            Playable(episode.data, "${response.name} · ${episode.label(i)}", episode.season, episode.episode, episode.posterUrl)
-        }
-        navigator.push(Route.Player(entry, playlist, index))
-    }
+    fun playEpisodes(list: List<Episode>, index: Int) = navigator.push(Route.Player(entry, response.playlist(list), index))
 
     val movieData: String? = when (response) {
         is MovieLoadResponse -> response.dataUrl
@@ -249,7 +278,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
 
                                 episodes.isNotEmpty() -> Button(onClick = {
                                     // Continue with the first unfinished episode of this season
-                                    val index = episodes.indexOfFirst { (positions[it.data]?.fraction ?: 0f) < 0.9f }
+                                    val index = episodes.indexOfFirst { (positions[it.data]?.fraction ?: 0f) < WATCHED_FRACTION }
                                     playEpisodes(episodes, index.coerceAtLeast(0))
                                 }) {
                                     Icon(painterResource(Res.drawable.play), null)

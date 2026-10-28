@@ -1,5 +1,7 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import androidx.compose.foundation.ContextMenuArea
+import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -27,7 +30,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,10 +56,17 @@ import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import androidx.compose.material3.Icon
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream4.compose.WhiteButton
+import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.MediaEntry
+import com.lagradost.cloudstream4.desktop.data.WatchProgress
 import com.lagradost.cloudstream4.desktop.data.toMediaEntry
+import com.lagradost.cloudstream4.desktop.generated.resources.Res
+import com.lagradost.cloudstream4.desktop.generated.resources.play
+import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.painterResource
 
 @Composable
 fun RemoteImage(
@@ -93,55 +106,86 @@ fun PosterCard(
     horizontal: Boolean = false,
     subtitle: String? = null,
     progress: Float? = null,
+    /** Shows a play button over the poster on hover */
+    onPlay: (() -> Unit)? = null,
+    /** Shows a spinner over the poster, while [onPlay] prepares playback */
+    isPreparing: Boolean = false,
+    /** Right-click menu, built when it opens so it shows the current state */
+    menu: () -> List<ContextMenuItem> = { emptyList() },
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
-    Column(
-        modifier = modifier
-            .width(if (horizontal) width * 1.6f else width)
-            .clip(RoundedCornerShape(10.dp))
-            .hoverable(interaction)
-            .clickable(onClick = onClick)
-            .padding(4.dp)
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(if (horizontal) 16f / 9f else 2f / 3f)
+    ContextMenuArea(items = menu) {
+        Column(
+            modifier = modifier
+                .width(if (horizontal) width * 1.6f else width)
                 .clip(RoundedCornerShape(10.dp))
+                .hoverable(interaction)
+                .clickable(onClick = onClick)
+                .padding(4.dp)
         ) {
-            RemoteImage(posterUrl, Modifier.fillMaxSize(), headers, contentDescription = title)
-            if (hovered) {
-                Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(if (horizontal) 16f / 9f else 2f / 3f)
+                    .clip(RoundedCornerShape(10.dp))
+            ) {
+                RemoteImage(posterUrl, Modifier.fillMaxSize(), headers, contentDescription = title)
+                if (hovered) {
+                    Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
+                }
+                if (isPreparing) {
+                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color.White)
+                    }
+                } else if (hovered && onPlay != null) {
+                    Icon(
+                        painterResource(Res.drawable.play),
+                        "Play",
+                        Modifier.align(Alignment.Center).size(48.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .clickable(onClick = onPlay)
+                            .padding(10.dp),
+                        tint = Color.White,
+                    )
+                }
+                if (progress != null && progress > 0f) {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
+                        drawStopIndicator = {},
+                    )
+                }
             }
-            if (progress != null && progress > 0f) {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
-                    drawStopIndicator = {},
+            Spacer(Modifier.height(6.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = if (hovered) FontWeight.Bold else FontWeight.Normal,
+            )
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            fontWeight = if (hovered) FontWeight.Bold else FontWeight.Normal,
-        )
-        if (subtitle != null) {
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
+
+/** Opening the page and bookmarking, the right-click menu of every card */
+fun mediaMenu(entry: MediaEntry, navigator: Navigator): List<ContextMenuItem> = listOf(
+    ContextMenuItem("Open page") { navigator.push(Route.Result(entry)) },
+    if (AppData.isBookmarked(entry.url)) ContextMenuItem("Remove bookmark") { AppData.toggleBookmark(entry) }
+    else ContextMenuItem("Bookmark") { AppData.toggleBookmark(entry) },
+)
 
 @Composable
 fun SearchResponseCard(item: SearchResponse, horizontal: Boolean = false, width: Dp = 140.dp) {
@@ -153,6 +197,7 @@ fun SearchResponseCard(item: SearchResponse, horizontal: Boolean = false, width:
         horizontal = horizontal,
         width = width,
         subtitle = listOfNotNull(item.type?.name, item.quality?.name).joinToString(" • ").ifBlank { null },
+        menu = { mediaMenu(item.toMediaEntry(), navigator) },
         onClick = { navigator.push(Route.Result(item.toMediaEntry())) },
     )
 }
@@ -166,7 +211,46 @@ fun MediaEntryCard(entry: MediaEntry, subtitle: String? = null, progress: Float?
         headers = entry.posterHeaders,
         subtitle = subtitle ?: entry.apiName,
         progress = progress,
+        menu = { mediaMenu(entry, navigator) },
         onClick = { navigator.push(Route.Result(entry)) },
+    )
+}
+
+/** A show or movie being watched: plays from where it stopped without opening its page */
+@Composable
+fun ContinueWatchingCard(progress: WatchProgress, fraction: Float?) {
+    val navigator = LocalNavigator.current
+    val scope = rememberCoroutineScope()
+    var isPreparing by remember { mutableStateOf(false) }
+    fun play() {
+        if (isPreparing) return
+        isPreparing = true
+        scope.launch {
+            // Nothing left to play or the show failed to load, its page shows why
+            val route = continueRoute(progress)
+            isPreparing = false
+            navigator.push(route ?: Route.Result(progress.media))
+        }
+    }
+    PosterCard(
+        title = progress.media.name,
+        posterUrl = progress.media.posterUrl,
+        headers = progress.media.posterHeaders,
+        subtitle = progress.episodeName ?: progress.media.apiName,
+        progress = fraction,
+        onPlay = ::play,
+        isPreparing = isPreparing,
+        menu = {
+            listOf(ContextMenuItem("Play", ::play)) + mediaMenu(progress.media, navigator) + listOfNotNull(
+                progress.episodeData?.let { data ->
+                    ContextMenuItem(if (progress.episodeName != null) "Mark episode as watched" else "Mark as watched") {
+                        AppData.markWatched(data, progress.durationMs)
+                    }
+                },
+                ContextMenuItem("Remove from history") { AppData.removeHistory(progress.media.url) },
+            )
+        },
+        onClick = { navigator.push(Route.Result(progress.media)) },
     )
 }
 
