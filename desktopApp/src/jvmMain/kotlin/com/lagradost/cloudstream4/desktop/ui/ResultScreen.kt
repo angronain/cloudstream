@@ -57,7 +57,11 @@ import com.lagradost.cloudstream3.TvSeriesLoadResponse
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.MediaEntry
+import com.lagradost.cloudstream4.desktop.data.WatchList
 import com.lagradost.cloudstream4.desktop.data.WatchProgress
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.arrow_back
 import com.lagradost.cloudstream4.desktop.generated.resources.bookmark
@@ -209,6 +213,7 @@ fun ResultScreen(media: MediaEntry) {
 private fun ResultContent(media: MediaEntry, response: LoadResponse) {
     val navigator = LocalNavigator.current
     val bookmarks by AppData.bookmarks.collectAsState()
+    val watchLists by AppData.watchLists.collectAsState()
     val positions by AppData.positions.collectAsState()
     val entry = remember(response) {
         media.copy(
@@ -302,10 +307,32 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                 DownloadButton(entry, Playable(movieData, response.name, posterUrl = response.posterUrl))
                             }
                             val saved = bookmarks.any { it.url == media.url }
-                            OutlinedButton(onClick = { AppData.toggleBookmark(entry) }) {
-                                Icon(painterResource(if (saved) Res.drawable.bookmark else Res.drawable.bookmark_border), null)
-                                Spacer(Modifier.width(6.dp))
-                                Text(if (saved) "Bookmarked" else "Bookmark")
+                            val list = watchLists[media.url] ?: WatchList.PlanToWatch
+                            Box {
+                                var listMenu by remember { mutableStateOf(false) }
+                                OutlinedButton(onClick = { listMenu = true }) {
+                                    Icon(painterResource(if (saved) Res.drawable.bookmark else Res.drawable.bookmark_border), null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(if (saved) list.title else "Bookmark")
+                                }
+                                DropdownMenu(listMenu, onDismissRequest = { listMenu = false }) {
+                                    WatchList.entries.forEach { option ->
+                                        DropdownMenuItem(
+                                            text = { Text(option.title, fontWeight = if (saved && option == list) FontWeight.Bold else null) },
+                                            onClick = {
+                                                listMenu = false
+                                                AppData.setWatchList(entry, option)
+                                            },
+                                        )
+                                    }
+                                    if (saved) {
+                                        HorizontalDivider()
+                                        DropdownMenuItem(text = { Text("Remove bookmark") }, onClick = {
+                                            listMenu = false
+                                            AppData.toggleBookmark(entry)
+                                        })
+                                    }
+                                }
                             }
                             OutlinedButton(onClick = { openInBrowser(response.url) }) {
                                 Icon(painterResource(Res.drawable.open_in_new), null)

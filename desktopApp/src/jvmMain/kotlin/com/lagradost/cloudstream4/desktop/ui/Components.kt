@@ -61,6 +61,7 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream4.compose.WhiteButton
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.MediaEntry
+import com.lagradost.cloudstream4.desktop.data.WatchList
 import com.lagradost.cloudstream4.desktop.data.WatchProgress
 import com.lagradost.cloudstream4.desktop.data.toMediaEntry
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
@@ -181,11 +182,14 @@ fun PosterCard(
 }
 
 /** Opening the page and bookmarking, the right-click menu of every card */
-fun mediaMenu(entry: MediaEntry, navigator: Navigator): List<ContextMenuItem> = listOf(
-    ContextMenuItem("Open page") { navigator.push(Route.Result(entry)) },
-    if (AppData.isBookmarked(entry.url)) ContextMenuItem("Remove bookmark") { AppData.toggleBookmark(entry) }
-    else ContextMenuItem("Bookmark") { AppData.toggleBookmark(entry) },
-)
+fun mediaMenu(entry: MediaEntry, navigator: Navigator): List<ContextMenuItem> {
+    val current = AppData.watchList(entry.url)
+    return listOf(ContextMenuItem("Open page") { navigator.push(Route.Result(entry)) }) +
+        WatchList.entries.filter { it != current }.map { list ->
+            ContextMenuItem(if (current == null) "Add to ${list.title}" else "Move to ${list.title}") { AppData.setWatchList(entry, list) }
+        } +
+        listOfNotNull(current?.let { ContextMenuItem("Remove bookmark") { AppData.toggleBookmark(entry) } })
+}
 
 @Composable
 fun SearchResponseCard(item: SearchResponse, horizontal: Boolean = false, width: Dp = 140.dp) {

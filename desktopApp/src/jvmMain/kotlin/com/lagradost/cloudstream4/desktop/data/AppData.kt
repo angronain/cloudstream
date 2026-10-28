@@ -105,6 +105,15 @@ data class Position(
 
 enum class PlayerKind { Internal, External }
 
+/** The lists bookmarks are sorted into, like in the Android app */
+enum class WatchList(val title: String) {
+    Watching("Watching"),
+    PlanToWatch("Plan to watch"),
+    Completed("Completed"),
+    OnHold("On hold"),
+    Dropped("Dropped"),
+}
+
 data class Settings(
     val theme: CloudStreamThemeMode = CloudStreamThemeMode.Dark,
     val primaryColor: CloudStreamPrimaryColor = CloudStreamPrimaryColor.NORMAL,
@@ -187,8 +196,24 @@ object AppData {
 
     fun isBookmarked(url: String) = _bookmarks.value.any { it.url == url }
 
-    fun toggleBookmark(entry: MediaEntry) = _bookmarks.persist("bookmarks") { list ->
-        if (list.any { it.url == entry.url }) list.filterNot { it.url == entry.url } else listOf(entry) + list
+    fun toggleBookmark(entry: MediaEntry) {
+        val removing = isBookmarked(entry.url)
+        _bookmarks.persist("bookmarks") { list ->
+            if (removing) list.filterNot { it.url == entry.url } else listOf(entry) + list
+        }
+        if (removing && entry.url in _watchLists.value) _watchLists.persist("watchLists") { it - entry.url }
+    }
+
+    /** The list of each bookmark, by url, bookmarks without one are in [WatchList.PlanToWatch] */
+    private val _watchLists = MutableStateFlow(store.get("watchLists", emptyMap<String, WatchList>()))
+    val watchLists: StateFlow<Map<String, WatchList>> = _watchLists.asStateFlow()
+
+    fun watchList(url: String): WatchList? = if (isBookmarked(url)) _watchLists.value[url] ?: WatchList.PlanToWatch else null
+
+    /** Bookmarks [entry] if needed and moves it to [list] */
+    fun setWatchList(entry: MediaEntry, list: WatchList) {
+        if (!isBookmarked(entry.url)) _bookmarks.persist("bookmarks") { listOf(entry) + it }
+        _watchLists.persist("watchLists") { it + (entry.url to list) }
     }
 
     /** Playback position per episode/movie data string, used to resume and show watched bars */
