@@ -1,6 +1,9 @@
 package com.lagradost.cloudstream4.desktop.data
 
 import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.databind.JsonNode
+import com.lagradost.cloudstream3.mapper
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -318,6 +321,59 @@ object AppData {
     fun rate(entry: MediaEntry, stars: Float?, year: Int? = null) = updateRating(entry, year) { it.copy(stars = stars) }
 
     fun toggleLike(entry: MediaEntry, year: Int? = null) = updateRating(entry, year) { it.copy(liked = !it.liked) }
+
+    /** What a backup holds: the user's library and settings, not the installed extensions, whose files are not in it */
+    private val backupFlows: Map<String, MutableStateFlow<*>> by lazy {
+        mapOf(
+            "settings" to _settings,
+            "repositories" to _repositories,
+            "bookmarks" to _bookmarks,
+            "watchLists" to _watchLists,
+            "ratings" to _ratings,
+            "history" to _history,
+            "positions" to _positions,
+            "audioPreferences" to _audioPreferences,
+            "episodeChecks" to _episodeChecks,
+        )
+    }
+
+    fun exportBackup(file: File) {
+        val backup = mapper.createObjectNode()
+        backup.put("app", "CloudStream desktop")
+        backup.put("version", 1)
+        backupFlows.forEach { (key, flow) -> backup.set<JsonNode>(key, mapper.valueToTree(flow.value)) }
+        mapper.writerWithDefaultPrettyPrinter().writeValue(file, backup)
+    }
+
+    /** Replaces the library and settings with the ones in a backup, returns how many parts were restored */
+    fun restoreBackup(file: File): Int {
+        val backup = mapper.readTree(file)
+        require(backup.path("app").asText() == "CloudStream desktop") { "Not a CloudStream desktop backup" }
+        // Everything is read before anything changes, so a broken backup changes nothing
+        val values = backupFlows.mapNotNull { (key, flow) ->
+            val node = backup.get(key) ?: return@mapNotNull null
+            val type = mapper.typeFactory.constructType(backupTypes.getValue(key))
+            Triple(key, flow, mapper.convertValue<Any>(node, type))
+        }
+        values.forEach { (key, flow, value) ->
+            @Suppress("UNCHECKED_CAST")
+            (flow as MutableStateFlow<Any?>).value = value
+            store.set(key, value)
+        }
+        return values.size
+    }
+
+    private val backupTypes: Map<String, TypeReference<*>> = mapOf(
+        "settings" to object : TypeReference<Settings>() {},
+        "repositories" to object : TypeReference<List<RepositoryEntry>>() {},
+        "bookmarks" to object : TypeReference<List<MediaEntry>>() {},
+        "watchLists" to object : TypeReference<Map<String, WatchList>>() {},
+        "ratings" to object : TypeReference<Map<String, Rating>>() {},
+        "history" to object : TypeReference<List<WatchProgress>>() {},
+        "positions" to object : TypeReference<LinkedHashMap<String, Position>>() {},
+        "audioPreferences" to object : TypeReference<LinkedHashMap<String, String>>() {},
+        "episodeChecks" to object : TypeReference<Map<String, EpisodeCheck>>() {},
+    )
 
     fun removeHistory(url: String) = _history.persist("history") { list -> list.filterNot { it.media.url == url } }
 

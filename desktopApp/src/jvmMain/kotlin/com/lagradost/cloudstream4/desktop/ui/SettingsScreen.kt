@@ -51,6 +51,7 @@ import com.lagradost.cloudstream4.desktop.update.Updater
 import com.lagradost.cloudstream4.theme.CloudStreamPrimaryColor
 import com.lagradost.cloudstream4.theme.CloudStreamThemeMode
 import java.awt.Desktop
+import java.awt.FileDialog
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.io.File
@@ -199,6 +200,34 @@ fun SettingsScreen() {
         Section("Storage") {
             Text("Data folder: ${AppDirs.dataDir.absolutePath}", style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppDirs.dataDir) } }) { Text("Open data folder") }
+        }
+
+        Section("Backup") {
+            val window = LocalMainWindow.current
+            var backupMessage by remember { mutableStateOf<String?>(null) }
+            Text(
+                "Bookmarks, lists, ratings, history, watched progress, repositories and settings. Extensions are installed again from the restored repositories.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = {
+                    val dialog = FileDialog(window, "Save backup", FileDialog.SAVE).apply {
+                        file = "CloudStream-backup-${LocalDate.now()}.json"
+                        isVisible = true
+                    }
+                    val name = dialog.file ?: return@TextButton
+                    backupMessage = runCatching { AppData.exportBackup(File(dialog.directory, name)); "Backup saved to $name" }
+                        .getOrElse { "Could not save the backup: ${it.message}" }
+                }) { Text("Save backup") }
+                TextButton(onClick = {
+                    val dialog = FileDialog(window, "Restore backup", FileDialog.LOAD).apply { isVisible = true }
+                    val name = dialog.file ?: return@TextButton
+                    backupMessage = runCatching { AppData.restoreBackup(File(dialog.directory, name)); "Backup restored" }
+                        .getOrElse { "Could not restore the backup: ${it.message}" }
+                }) { Text("Restore backup") }
+            }
+            backupMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
 
         Section("Updates") {
