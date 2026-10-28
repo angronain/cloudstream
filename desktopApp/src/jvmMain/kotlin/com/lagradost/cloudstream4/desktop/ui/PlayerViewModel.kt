@@ -80,7 +80,7 @@ fun pickAudioTrack(tracks: List<Track>, preferred: String): Track? {
 class PlayerViewModel(
     private val scope: CoroutineScope,
     private val apiName: String,
-    private val data: String,
+    val data: String,
     /** The show or movie, its last used source is preferred for episodes without one of their own */
     private val mediaUrl: String,
 ) {
@@ -111,6 +111,15 @@ class PlayerViewModel(
      * Set when the episode's own remembered link failed, or when only the show's source is known.
      */
     private var waitingForRemembered = false
+
+    private var started = false
+
+    /** Loads the links unless that already started, the next episode's links are loaded ahead of time */
+    fun loadLinksOnce() {
+        if (started) return
+        started = true
+        loadLinks()
+    }
 
     fun loadLinks() {
         scope.launch {

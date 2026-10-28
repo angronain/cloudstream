@@ -25,9 +25,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -36,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -141,9 +144,13 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     val settings by AppData.settings.collectAsState()
     val playable = route.playlist[route.index]
     val scope = rememberCoroutineScope()
-    val viewModel = remember(route) { PlayerViewModel(scope, route.media.apiName, playable.data, route.media.url) }
+    // The next episode's links, loaded before this one ends so it starts right away
+    var prefetched by remember { mutableStateOf<PlayerViewModel?>(null) }
+    val viewModel = remember(route) {
+        prefetched?.takeIf { it.data == playable.data } ?: PlayerViewModel(scope, route.media.apiName, playable.data, route.media.url)
+    }
     val state by viewModel.state.collectAsState()
-    LaunchedEffect(viewModel) { viewModel.loadLinks() }
+    LaunchedEffect(viewModel) { viewModel.loadLinksOnce() }
 
     val hasNext = route.index + 1 < route.playlist.size
     val playNext = {
@@ -243,10 +250,23 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             }
         }
     }
+    val nearEnd = hasNext && engine.lengthMs > 0 && engine.lengthMs - engine.timeMs < PREFETCH_MS
+    LaunchedEffect(nearEnd) {
+        if (!nearEnd) return@LaunchedEffect
+        val next = route.playlist[route.index + 1]
+        if (prefetched?.data != next.data) {
+            // Saved first, so the next episode prefers the source playing now
+            saveProgress()
+            prefetched = PlayerViewModel(scope, route.media.apiName, next.data, route.media.url).also { it.loadLinksOnce() }
+        }
+    }
+
+    // Cancelling the next episode card keeps the player on this episode when it ends
+    var nextCancelled by remember(route) { mutableStateOf(false) }
     LaunchedEffect(engine.hasFinished) {
         if (engine.hasFinished) {
             saveProgress()
-            if (hasNext) playNext()
+            if (hasNext && !nextCancelled) playNext()
         }
     }
     // The effects below outlive episode changes, so they must save the episode playing now
@@ -445,6 +465,24 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 )
                 if (state.error != null) {
                     TextButton(onClick = viewModel::loadLinks) { Text("Retry") }
+                }
+            }
+        }
+
+        val remainingMs = engine.lengthMs - engine.timeMs
+        if (hasNext && !nextCancelled && engine.lengthMs > NEXT_UP_MS * 4 && remainingMs in 1..NEXT_UP_MS) {
+            Surface(
+                Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 120.dp).widthIn(max = 320.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color.Black.copy(alpha = 0.8f),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Next episode in ${(remainingMs + 999) / 1000}s", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+                    Text(route.playlist[route.index + 1].title, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { saveProgress(); playNext() }) { Text("Play now") }
+                        TextButton(onClick = { nextCancelled = true; focus.requestFocus() }) { Text("Cancel", color = Color.White) }
+                    }
                 }
             }
         }
@@ -744,3 +782,9 @@ private fun ExternalPlayerScreen(
         }
     }
 }
+
+/** The next episode card shows this long before the end */
+private const val NEXT_UP_MS = 30_000L
+
+/** The next episode's links start loading this long before the end */
+private const val PREFETCH_MS = 120_000L
