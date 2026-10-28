@@ -66,6 +66,8 @@ import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.arrow_back
 import com.lagradost.cloudstream4.desktop.generated.resources.bookmark
 import com.lagradost.cloudstream4.desktop.generated.resources.bookmark_border
+import com.lagradost.cloudstream4.desktop.generated.resources.favorite
+import com.lagradost.cloudstream4.desktop.generated.resources.favorite_border
 import com.lagradost.cloudstream4.desktop.generated.resources.open_in_new
 import com.lagradost.cloudstream4.desktop.generated.resources.play
 import com.lagradost.cloudstream4.desktop.generated.resources.star
@@ -214,6 +216,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
     val navigator = LocalNavigator.current
     val bookmarks by AppData.bookmarks.collectAsState()
     val watchLists by AppData.watchLists.collectAsState()
+    val ratings by AppData.ratings.collectAsState()
     val positions by AppData.positions.collectAsState()
     val entry = remember(response) {
         media.copy(
@@ -338,6 +341,17 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                 Icon(painterResource(Res.drawable.open_in_new), null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("Website")
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val rating = ratings[media.url]
+                            RatingBar(rating?.stars, onRate = { AppData.rate(entry, it, response.year) })
+                            IconButton(onClick = { AppData.toggleLike(entry, response.year) }) {
+                                Icon(
+                                    painterResource(if (rating?.liked == true) Res.drawable.favorite else Res.drawable.favorite_border),
+                                    if (rating?.liked == true) "Unlike" else "Like",
+                                    tint = if (rating?.liked == true) Color(0xFFFF8000) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }

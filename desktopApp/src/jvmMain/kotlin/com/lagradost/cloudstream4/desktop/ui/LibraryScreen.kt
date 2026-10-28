@@ -34,7 +34,7 @@ import com.lagradost.cloudstream4.desktop.data.WatchList
 
 private enum class LibraryTab(val title: String) { Bookmarks("Bookmarks"), History("History") }
 
-private enum class BookmarkSort(val title: String) { Added("Recently added"), Watched("Recently watched"), Name("A–Z") }
+private enum class BookmarkSort(val title: String) { Added("Recently added"), Watched("Recently watched"), Name("A–Z"), Rating("Rating") }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -43,6 +43,7 @@ fun LibraryScreen() {
     val history by AppData.history.collectAsState()
     val positions by AppData.positions.collectAsState()
     val watchLists by AppData.watchLists.collectAsState()
+    val ratings by AppData.ratings.collectAsState()
     var tab by remember { mutableStateOf(LibraryTab.Bookmarks) }
     // Null shows every list
     var list by remember { mutableStateOf<WatchList?>(null) }
@@ -96,6 +97,7 @@ fun LibraryScreen() {
                 BookmarkSort.Added -> entries
                 BookmarkSort.Watched -> entries.sortedByDescending { lastWatched[it.url] ?: 0L }
                 BookmarkSort.Name -> entries.sortedBy { it.name.lowercase() }
+                BookmarkSort.Rating -> entries.sortedByDescending { ratings[it.url]?.stars ?: 0f }
             }
         }
 
@@ -118,7 +120,7 @@ fun LibraryScreen() {
             modifier = Modifier.fillMaxSize(),
         ) {
             when (tab) {
-                LibraryTab.Bookmarks -> items(shownBookmarks, key = { it.url }) { MediaEntryCard(it, subtitle = "${it.apiName} · ${listFor(it).title}") }
+                LibraryTab.Bookmarks -> items(shownBookmarks, key = { it.url }) { MediaEntryCard(it, subtitle = listOfNotNull(listFor(it).title, ratings[it.url]?.stars?.let(::formatStars)).joinToString(" · ")) }
                 LibraryTab.History -> items(history, key = { it.media.url }) { progress ->
                     ContinueWatchingCard(progress, progress.episodeData?.let { positions[it]?.fraction })
                 }

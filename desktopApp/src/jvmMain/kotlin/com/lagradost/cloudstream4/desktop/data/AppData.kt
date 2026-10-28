@@ -103,6 +103,16 @@ data class Position(
     }
 }
 
+/** The user's opinion of a title, on Letterboxd's scale so ratings carry over both ways */
+data class Rating(
+    val media: MediaEntry,
+    /** 0.5 to 5 in half steps, null if only liked */
+    val stars: Float? = null,
+    val liked: Boolean = false,
+    val year: Int? = null,
+    val updatedAt: Long = System.currentTimeMillis(),
+)
+
 enum class PlayerKind { Internal, External }
 
 /** The lists bookmarks are sorted into, like in the Android app */
@@ -295,6 +305,19 @@ object AppData {
         if ((_episodeChecks.value[url]?.newCount ?: 0) == 0) return
         _episodeChecks.persist("episodeChecks") { map -> map[url]?.let { map + (url to it.copy(newCount = 0)) } ?: map }
     }
+
+    /** Ratings and likes by url */
+    private val _ratings = MutableStateFlow(store.get("ratings", emptyMap<String, Rating>()))
+    val ratings: StateFlow<Map<String, Rating>> = _ratings.asStateFlow()
+
+    private fun updateRating(entry: MediaEntry, year: Int?, change: (Rating) -> Rating) = _ratings.persist("ratings") { map ->
+        val next = change(map[entry.url] ?: Rating(entry, year = year)).copy(media = entry, year = year ?: map[entry.url]?.year, updatedAt = System.currentTimeMillis())
+        if (next.stars == null && !next.liked) map - entry.url else map + (entry.url to next)
+    }
+
+    fun rate(entry: MediaEntry, stars: Float?, year: Int? = null) = updateRating(entry, year) { it.copy(stars = stars) }
+
+    fun toggleLike(entry: MediaEntry, year: Int? = null) = updateRating(entry, year) { it.copy(liked = !it.liked) }
 
     fun removeHistory(url: String) = _history.persist("history") { list -> list.filterNot { it.media.url == url } }
 

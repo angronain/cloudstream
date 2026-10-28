@@ -66,6 +66,15 @@ import com.lagradost.cloudstream4.desktop.data.WatchProgress
 import com.lagradost.cloudstream4.desktop.data.toMediaEntry
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.play
+import com.lagradost.cloudstream4.desktop.generated.resources.star
+import com.lagradost.cloudstream4.desktop.generated.resources.star_border
+import com.lagradost.cloudstream4.desktop.generated.resources.star_half
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 
@@ -263,6 +272,41 @@ fun ContinueWatchingCard(
         onClick = { navigator.push(Route.Result(progress.media)) },
     )
 }
+
+/** Five stars rated in half steps: the left half of a star gives half of it. Clicking the current rating clears it */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+fun RatingBar(stars: Float?, onRate: (Float?) -> Unit, starSize: Dp = 28.dp) {
+    var hover by remember { mutableStateOf<Float?>(null) }
+    var widthPx by remember { mutableStateOf(1) }
+    fun valueAt(x: Float) = (kotlin.math.ceil(x / widthPx * 10) / 2).toFloat().coerceIn(0.5f, 5f)
+    Row(
+        Modifier
+            .onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
+            .onPointerEvent(PointerEventType.Move) { event -> hover = valueAt(event.changes.first().position.x) }
+            .onPointerEvent(PointerEventType.Exit) { hover = null }
+            .pointerInput(stars) { detectTapGestures { offset -> valueAt(offset.x).let { onRate(if (it == stars) null else it) } } }
+    ) {
+        val shown = hover ?: stars ?: 0f
+        for (i in 1..5) {
+            Icon(
+                painterResource(
+                    when {
+                        shown >= i -> Res.drawable.star
+                        shown >= i - 0.5f -> Res.drawable.star_half
+                        else -> Res.drawable.star_border
+                    }
+                ),
+                null,
+                Modifier.size(starSize),
+                tint = if (hover != null || stars != null) Color(0xFF00C030) else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** "3.5 ★" style text for a rating */
+fun formatStars(stars: Float): String = (if (stars % 1f == 0f) stars.toInt().toString() else stars.toString()) + " ★"
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
