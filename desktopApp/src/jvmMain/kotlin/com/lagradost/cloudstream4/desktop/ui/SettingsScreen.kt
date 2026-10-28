@@ -119,16 +119,16 @@ fun SettingsScreen() {
                     label = { Text("External player") })
             }
             // Looked up off the UI thread, null until known
-            val vlcInstalled by produceState<Boolean?>(null) { value = withContext(Dispatchers.IO) { Vlc.isInstalled } }
+            val vlcInstalled by produceState<Boolean?>(null) { value = withContext(Dispatchers.IO) { Vlc.isInstalled.also { Vlc.problem } } }
             vlcInstalled?.let { installed ->
                 Text(
                     if (installed) "VLC found, the built-in player is available."
-                    else "VLC was not found. Install VLC to use the built-in player.",
+                    else Vlc.problem ?: "VLC was not found. Install VLC to use the built-in player.",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (installed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
             }
-            if (vlcInstalled == false) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text("Download VLC") }
+            if (vlcInstalled == false && Vlc.problem == null) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text("Download VLC") }
             OutlinedTextField(
                 value = settings.externalPlayer,
                 onValueChange = { value -> AppData.updateSettings { it.copy(externalPlayer = value) } },

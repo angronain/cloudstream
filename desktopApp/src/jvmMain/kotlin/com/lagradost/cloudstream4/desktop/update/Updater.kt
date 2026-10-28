@@ -10,6 +10,7 @@ import com.lagradost.cloudstream4.desktop.BuildInfo
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.OperatingSystem
+import com.lagradost.cloudstream4.desktop.player.MacArch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -84,9 +85,10 @@ object Updater {
         return 0
     }
 
-    /** Release assets are named like CloudStream-macos-arm64-CloudStream-1.2.3.dmg by the workflow */
+    /** Release assets are named like CloudStream-1.2.3-Mac-Apple-Silicon-macos-arm64.dmg by the workflow, older ones CloudStream-macos-arm64-CloudStream-1.2.3.dmg */
     private fun pickAsset(assets: List<GithubAsset>): GithubAsset? {
-        val arm = System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
+        // The Intel build on an Apple Silicon Mac updates to the Apple Silicon one, which can use VLC
+        val arm = MacArch.isTranslated || System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }
         val (platform, extension) = when (AppDirs.os) {
             OperatingSystem.MacOS -> (if (arm) "macos-arm64" else "macos-x64") to ".dmg"
             OperatingSystem.Windows -> "windows-x64" to ".msi"

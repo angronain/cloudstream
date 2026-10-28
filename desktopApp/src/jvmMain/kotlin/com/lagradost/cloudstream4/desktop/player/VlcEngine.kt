@@ -41,6 +41,11 @@ object Vlc {
         }.onFailure { logError(it) }.getOrDefault(false)
     }
 
+    /** Why the VLC that is installed cannot be used, null if it is not installed or works */
+    val problem: String? by lazy {
+        if (isInstalled) null else MacArch.vlcProblem()?.also { AppLog.log("VLC: $it") }
+    }
+
     // Kept so it is not garbage collected while VLC still calls it
     private var nativeLog: NativeLog? = null
 

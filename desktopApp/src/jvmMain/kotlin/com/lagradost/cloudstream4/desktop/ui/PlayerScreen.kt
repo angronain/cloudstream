@@ -153,7 +153,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
 
     // Starting VLC takes a moment the first time, do it off the UI thread
     val vlcAvailable by produceState(if (Vlc.isStarted) Vlc.isAvailable else null) {
-        if (value == null) value = withContext(Dispatchers.IO) { Vlc.isAvailable }
+        if (value == null) value = withContext(Dispatchers.IO) { Vlc.isAvailable.also { Vlc.problem } }
     }
     if (settings.player == PlayerKind.Internal && vlcAvailable == null) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -721,10 +721,10 @@ private fun ExternalPlayerScreen(
         }
         if (!Vlc.isAvailable && AppData.settings.value.player == PlayerKind.Internal) {
             Text(
-                "The built-in player needs VLC installed. Install it from videolan.org to play inside CloudStream.",
+                Vlc.problem ?: "The built-in player needs VLC installed. Install it from videolan.org to play inside CloudStream.",
                 color = MaterialTheme.colorScheme.error,
             )
-            TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text("Download VLC") }
+            if (Vlc.problem == null) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text("Download VLC") }
         }
         launched?.let { Text(it) }
         if (state.isLoadingLinks) Text("Loading links (${state.links.size} found)...")

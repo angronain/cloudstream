@@ -113,14 +113,24 @@ jobs:
         with:
           path: installers
 
-      # Installers from different architectures share a file name, so prefix them with the build name
+      # Installers from different architectures share a file name, so they are named by platform. The build name
+      # (macos-arm64...) stays in it since installed apps look for it when updating
       - name: Name installers by platform
         run: |
           mkdir release
+          version="${GITHUB_REF#refs/tags/desktop-v}"
           for dir in installers/*/; do
             name=$(basename "$dir")
+            name="${name#CloudStream-}"
+            case "$name" in
+              macos-arm64) label="Mac-Apple-Silicon" ;;
+              macos-x64) label="Mac-Intel" ;;
+              windows-*) label="Windows" ;;
+              linux-*) label="Linux" ;;
+              *) label="$name" ;;
+            esac
             find "$dir" -type f | while read -r file; do
-              cp "$file" "release/${name}-$(basename "$file")"
+              cp "$file" "release/CloudStream-${version}-${label}-${name}.${file##*.}"
             done
           done
           ls -la release
@@ -131,7 +141,13 @@ jobs:
           files: release/*
           generate_release_notes: true
           body: |
-            Unsigned builds. VLC must be installed for the built-in player.
+            **Which file to download**
+            - Mac with an M1, M2, M3, M4 or newer chip (Apple Silicon): `Mac-Apple-Silicon` .dmg
+            - Mac with an Intel processor: `Mac-Intel` .dmg. Not sure? Apple menu → About This Mac shows "Chip" on Apple Silicon and "Processor" on Intel.
+            - Windows: `Windows` .exe (or the .msi)
+            - Linux: `Linux` .deb for Debian/Ubuntu, .rpm for Fedora/openSUSE
+
+            Unsigned builds. VLC must be installed for the built-in player, the version for your computer.
             Installed apps update themselves to new releases automatically.
             macOS: if it says the app is damaged, run `xattr -cr /Applications/CloudStream.app`.
             Windows: SmartScreen may warn, choose "More info" → "Run anyway".
