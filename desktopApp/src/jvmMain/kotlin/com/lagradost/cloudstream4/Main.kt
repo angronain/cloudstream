@@ -11,6 +11,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -100,7 +101,8 @@ fun main() {
                     Box(Modifier.fillMaxSize().onPointerEvent(PointerEventType.Press) { event ->
                         if (event.buttons.isBackPressed) navigator.back()
                     }) {
-                        App(navigator)
+                        // Everything is drawn again in the new language
+                        key(settings.language) { App(navigator) }
                     }
                 }
             }

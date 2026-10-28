@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,18 +59,18 @@ fun DownloadsScreen() {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Downloads", style = MaterialTheme.typography.headlineMedium)
+                Text(tr("Downloads"), style = MaterialTheme.typography.headlineMedium)
                 Text(DownloadManager.directory.absolutePath, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = {
                 DownloadManager.directory.mkdirs()
                 runCatching { Desktop.getDesktop().open(DownloadManager.directory) }
-            }) { Text("Open folder") }
+            }) { Text(tr("Open folder")) }
         }
         if (downloads.isEmpty()) {
             MessageBox(
-                "Nothing downloaded yet",
-                "Use the download button on a movie or episode to watch it offline.",
+                tr("Nothing downloaded yet"),
+                tr("Use the download button on a movie or episode to watch it offline."),
             )
             return
         }
@@ -108,14 +109,14 @@ private fun DownloadRow(item: DownloadItem) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val detail = when (item.status) {
-                DownloadStatus.Queued -> "Waiting"
-                DownloadStatus.Downloading -> if (item.totalBytes == 0L && item.segmentsTotal == 0) "Finding links..."
+                DownloadStatus.Queued -> tr("Waiting")
+                DownloadStatus.Downloading -> if (item.totalBytes == 0L && item.segmentsTotal == 0) tr("Finding links...")
                 else "${(item.progress * 100).toInt()}% · ${formatBytes(item.downloadedBytes)}" +
                     (if (item.totalBytes > 0) " of ${formatBytes(item.totalBytes)}" else "")
 
-                DownloadStatus.Paused -> "Paused · ${(item.progress * 100).toInt()}%"
-                DownloadStatus.Completed -> "Downloaded · ${formatBytes(item.file.length())}"
-                DownloadStatus.Failed -> "Failed: ${item.error}"
+                DownloadStatus.Paused -> tr("Paused · {0}%", (item.progress * 100).toInt())
+                DownloadStatus.Completed -> tr("Downloaded · {0}", formatBytes(item.file.length()))
+                DownloadStatus.Failed -> tr("Failed: {0}", item.error)
             }
             Text(
                 detail,
@@ -130,14 +131,14 @@ private fun DownloadRow(item: DownloadItem) {
         }
         Spacer(Modifier.width(8.dp))
         when (item.status) {
-            DownloadStatus.Completed -> IconButton(onClick = ::play) { Icon(painterResource(Res.drawable.play), "Play") }
+            DownloadStatus.Completed -> IconButton(onClick = ::play) { Icon(painterResource(Res.drawable.play), tr("Play")) }
             DownloadStatus.Downloading, DownloadStatus.Queued ->
-                IconButton(onClick = { DownloadManager.pause(item.id) }) { Icon(painterResource(Res.drawable.pause), "Pause") }
+                IconButton(onClick = { DownloadManager.pause(item.id) }) { Icon(painterResource(Res.drawable.pause), tr("Pause")) }
 
             DownloadStatus.Paused, DownloadStatus.Failed ->
-                TextButton(onClick = { DownloadManager.resume(item.id) }) { Text(if (item.status == DownloadStatus.Failed) "Retry" else "Resume") }
+                TextButton(onClick = { DownloadManager.resume(item.id) }) { Text(if (item.status == DownloadStatus.Failed) tr("Retry") else tr("Resume")) }
         }
-        IconButton(onClick = { DownloadManager.delete(item.id) }) { Icon(painterResource(Res.drawable.delete), "Delete") }
+        IconButton(onClick = { DownloadManager.delete(item.id) }) { Icon(painterResource(Res.drawable.delete), tr("Delete")) }
     }
 }
 
@@ -148,11 +149,11 @@ fun DownloadButton(media: com.lagradost.cloudstream4.desktop.data.MediaEntry, pl
     val item = downloads.firstOrNull { it.id == playable.data }
     when (item?.status) {
         null, DownloadStatus.Failed -> IconButton(onClick = { DownloadManager.enqueue(media, playable) }) {
-            Icon(painterResource(Res.drawable.download), "Download")
+            Icon(painterResource(Res.drawable.download), tr("Download"))
         }
 
-        DownloadStatus.Completed -> Text("Downloaded", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-        DownloadStatus.Paused -> TextButton(onClick = { DownloadManager.resume(item.id) }) { Text("Resume") }
+        DownloadStatus.Completed -> Text(tr("Downloaded"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        DownloadStatus.Paused -> TextButton(onClick = { DownloadManager.resume(item.id) }) { Text(tr("Resume")) }
         DownloadStatus.Queued, DownloadStatus.Downloading -> Box(contentAlignment = Alignment.Center, modifier = Modifier.size(40.dp)) {
             CircularProgressIndicator(progress = { item.progress }, modifier = Modifier.size(28.dp))
         }

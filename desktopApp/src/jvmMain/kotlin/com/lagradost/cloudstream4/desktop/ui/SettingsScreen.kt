@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream4.desktop.BuildInfo
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.I18n
 import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
@@ -84,19 +86,29 @@ fun SettingsScreen() {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp).widthIn(max = 800.dp)
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineMedium)
+        Text(tr("Settings"), style = MaterialTheme.typography.headlineMedium)
 
-        Section("Appearance") {
+        Section(tr("Appearance")) {
+            Text(tr("Language"), style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                I18n.languages.forEach { (code, name) ->
+                    FilterChip(
+                        settings.language == code,
+                        onClick = { AppData.updateSettings { it.copy(language = code) } },
+                        label = { Text(if (code.isEmpty()) tr(name) else name) },
+                    )
+                }
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 CloudStreamThemeMode.entries.filter { it != CloudStreamThemeMode.Dynamic }.forEach { mode ->
                     FilterChip(
                         settings.theme == mode,
                         onClick = { AppData.updateSettings { it.copy(theme = mode) } },
-                        label = { Text(if (mode == CloudStreamThemeMode.FollowSystem) "System" else mode.name) },
+                        label = { Text(if (mode == CloudStreamThemeMode.FollowSystem) tr("System") else mode.name) },
                     )
                 }
             }
-            Text("Accent color", style = MaterialTheme.typography.bodyMedium)
+            Text(tr("Accent color"), style = MaterialTheme.typography.bodyMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 CloudStreamPrimaryColor.entries.forEach { color ->
                     Box(
@@ -112,33 +124,33 @@ fun SettingsScreen() {
             }
         }
 
-        Section("Player") {
+        Section(tr("Player")) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(settings.player == PlayerKind.Internal, { AppData.updateSettings { it.copy(player = PlayerKind.Internal) } },
-                    label = { Text("Built-in (VLC)") })
+                    label = { Text(tr("Built-in (VLC)")) })
                 FilterChip(settings.player == PlayerKind.External, { AppData.updateSettings { it.copy(player = PlayerKind.External) } },
-                    label = { Text("External player") })
+                    label = { Text(tr("External player")) })
             }
             // Looked up off the UI thread, null until known
             val vlcInstalled by produceState<Boolean?>(null) { value = withContext(Dispatchers.IO) { Vlc.isInstalled.also { Vlc.problem } } }
             vlcInstalled?.let { installed ->
                 Text(
-                    if (installed) "VLC found, the built-in player is available."
-                    else Vlc.problem ?: "VLC was not found. Install VLC to use the built-in player.",
+                    if (installed) tr("VLC found, the built-in player is available.")
+                    else Vlc.problem ?: tr("VLC was not found. Install VLC to use the built-in player."),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (installed) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
             }
-            if (vlcInstalled == false && Vlc.problem == null) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text("Download VLC") }
+            if (vlcInstalled == false && Vlc.problem == null) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text(tr("Download VLC")) }
             OutlinedTextField(
                 value = settings.externalPlayer,
                 onValueChange = { value -> AppData.updateSettings { it.copy(externalPlayer = value) } },
-                label = { Text("External player path") },
-                placeholder = { Text(ExternalPlayer.detect() ?: "Auto detect VLC, mpv or IINA") },
+                label = { Text(tr("External player path")) },
+                placeholder = { Text(ExternalPlayer.detect() ?: tr("Auto detect VLC, mpv or IINA")) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text("Seek ${settings.seekSeconds} seconds with the arrow keys", style = MaterialTheme.typography.bodyMedium)
+            Text(tr("Seek {0} seconds with the arrow keys", settings.seekSeconds), style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(5, 10, 15, 30).forEach { seconds ->
                     FilterChip(settings.seekSeconds == seconds, { AppData.updateSettings { it.copy(seekSeconds = seconds) } },
@@ -147,125 +159,125 @@ fun SettingsScreen() {
             }
         }
 
-        Section("Subtitles") {
-            Text("Text size", style = MaterialTheme.typography.bodyMedium)
+        Section(tr("Subtitles")) {
+            Text(tr("Text size"), style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(75, 100, 125, 150, 200).forEach { scale ->
                     FilterChip(settings.subtitleScale == scale, { AppData.updateSettings { it.copy(subtitleScale = scale) } },
                         label = { Text("$scale%") })
                 }
             }
-            SwitchRow("Dark background", "A box behind the text, easier to read on bright scenes", settings.subtitleBackground) { value ->
+            SwitchRow(tr("Dark background"), tr("A box behind the text, easier to read on bright scenes"), settings.subtitleBackground) { value ->
                 AppData.updateSettings { it.copy(subtitleBackground = value) }
             }
             // VLC reads these once, when the player first opens
             if (Vlc.isStarted) {
                 Text(
-                    "Changes apply after restarting CloudStream.",
+                    tr("Changes apply after restarting CloudStream."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
 
-        Section("Downloads") {
+        Section(tr("Downloads")) {
             OutlinedTextField(
                 value = settings.downloadDirectory,
                 onValueChange = { value -> AppData.updateSettings { it.copy(downloadDirectory = value) } },
-                label = { Text("Download folder") },
+                label = { Text(tr("Download folder")) },
                 placeholder = { Text(DownloadManager.defaultDirectory.absolutePath) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
 
-        Section("Extensions") {
+        Section(tr("Extensions")) {
             SwitchRow(
-                "Use jsDelivr for GitHub",
-                "Downloads repositories and extensions through cdn.jsdelivr.net, useful if GitHub is blocked",
+                tr("Use jsDelivr for GitHub"),
+                tr("Downloads repositories and extensions through cdn.jsdelivr.net, useful if GitHub is blocked"),
                 settings.jsdelivrProxy,
             ) { value -> AppData.updateSettings { it.copy(jsdelivrProxy = value) } }
         }
 
-        Section("Library") {
+        Section(tr("Library")) {
             val checking by NewEpisodes.checking.collectAsState()
             SwitchRow(
-                "Check for new episodes",
-                "Once a day, looks for new episodes of every show you watched at least one episode of and lists them on Home",
+                tr("Check for new episodes"),
+                tr("Once a day, looks for new episodes of every show you watched at least one episode of and lists them on Home"),
                 settings.newEpisodeChecks,
             ) { value -> AppData.updateSettings { it.copy(newEpisodeChecks = value) } }
-            TextButton(onClick = NewEpisodes::check, enabled = !checking) { Text(if (checking) "Checking…" else "Check now") }
+            TextButton(onClick = NewEpisodes::check, enabled = !checking) { Text(if (checking) tr("Checking…") else tr("Check now")) }
         }
 
-        Section("Storage") {
-            Text("Data folder: ${AppDirs.dataDir.absolutePath}", style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppDirs.dataDir) } }) { Text("Open data folder") }
+        Section(tr("Storage")) {
+            Text(tr("Data folder: {0}", AppDirs.dataDir.absolutePath), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppDirs.dataDir) } }) { Text(tr("Open data folder")) }
         }
 
-        Section("Backup") {
+        Section(tr("Backup")) {
             val window = LocalMainWindow.current
             var backupMessage by remember { mutableStateOf<String?>(null) }
             Text(
-                "Bookmarks, lists, ratings, history, watched progress, repositories and settings. Extensions are installed again from the restored repositories.",
+                tr("Bookmarks, lists, ratings, history, watched progress, repositories and settings. Extensions are installed again from the restored repositories."),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextButton(onClick = {
-                    val dialog = FileDialog(window, "Save backup", FileDialog.SAVE).apply {
+                    val dialog = FileDialog(window, tr("Save backup"), FileDialog.SAVE).apply {
                         file = "CloudStream-backup-${LocalDate.now()}.json"
                         isVisible = true
                     }
                     val name = dialog.file ?: return@TextButton
-                    backupMessage = runCatching { AppData.exportBackup(File(dialog.directory, name)); "Backup saved to $name" }
-                        .getOrElse { "Could not save the backup: ${it.message}" }
-                }) { Text("Save backup") }
+                    backupMessage = runCatching { AppData.exportBackup(File(dialog.directory, name)); tr("Backup saved to {0}", name) }
+                        .getOrElse { tr("Could not save the backup: {0}", it.message) }
+                }) { Text(tr("Save backup")) }
                 TextButton(onClick = {
-                    val dialog = FileDialog(window, "Restore backup", FileDialog.LOAD).apply { isVisible = true }
+                    val dialog = FileDialog(window, tr("Restore backup"), FileDialog.LOAD).apply { isVisible = true }
                     val name = dialog.file ?: return@TextButton
-                    backupMessage = runCatching { AppData.restoreBackup(File(dialog.directory, name)); "Backup restored" }
-                        .getOrElse { "Could not restore the backup: ${it.message}" }
-                }) { Text("Restore backup") }
+                    backupMessage = runCatching { AppData.restoreBackup(File(dialog.directory, name)); tr("Backup restored") }
+                        .getOrElse { tr("Could not restore the backup: {0}", it.message) }
+                }) { Text(tr("Restore backup")) }
             }
             backupMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
 
-        Section("Updates") {
+        Section(tr("Updates")) {
             val update by Updater.state.collectAsState()
-            Text("Version ${Updater.currentVersion}, updates from github.com/${BuildInfo.UPDATE_REPOSITORY}", style = MaterialTheme.typography.bodyMedium)
-            SwitchRow("Check for updates on startup", null, settings.checkForUpdates) { value ->
+            Text(tr("Version {0}, updates from github.com/{1}", Updater.currentVersion, BuildInfo.UPDATE_REPOSITORY), style = MaterialTheme.typography.bodyMedium)
+            SwitchRow(tr("Check for updates on startup"), null, settings.checkForUpdates) { value ->
                 AppData.updateSettings { it.copy(checkForUpdates = value) }
             }
             SwitchRow(
-                "Update automatically",
-                "Downloads new versions in the background and installs them when you restart or quit",
+                tr("Update automatically"),
+                tr("Downloads new versions in the background and installs them when you restart or quit"),
                 settings.autoUpdate,
             ) { value -> AppData.updateSettings { it.copy(autoUpdate = value) } }
             if (!Updater.canInstall) {
                 Text(
-                    "Running outside the installed app, updates can be checked but not installed.",
+                    tr("Running outside the installed app, updates can be checked but not installed."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 when (val current = update) {
-                    is UpdateState.Ready -> TextButton(onClick = Updater::installAndRestart) { Text("Restart and update to ${current.update.label}") }
+                    is UpdateState.Ready -> TextButton(onClick = Updater::installAndRestart) { Text(tr("Restart and update to {0}", current.update.label)) }
                     is UpdateState.Available -> TextButton(onClick = {
                         if (Updater.canInstall) Updater.download(current.update) else openInBrowser(current.update.asset.downloadUrl)
-                    }) { Text("Download ${current.update.label}") }
+                    }) { Text(tr("Download {0}", current.update.label)) }
 
                     is UpdateState.Downloading, UpdateState.Checking -> Unit
-                    else -> TextButton(onClick = { Updater.check(userInitiated = true) }) { Text("Check for updates") }
+                    else -> TextButton(onClick = { Updater.check(userInitiated = true) }) { Text(tr("Check for updates")) }
                 }
                 Text(
                     when (val current = update) {
                         UpdateState.Idle -> ""
-                        UpdateState.Checking -> "Checking..."
-                        UpdateState.UpToDate -> "You have the latest version"
-                        is UpdateState.Available -> "Version ${current.update.label} is available"
-                        is UpdateState.Downloading -> "Downloading ${current.update.label}: ${(current.progress * 100).toInt()}%"
-                        is UpdateState.Ready -> "Version ${current.update.label} will be installed when you quit"
+                        UpdateState.Checking -> tr("Checking...")
+                        UpdateState.UpToDate -> tr("You have the latest version")
+                        is UpdateState.Available -> tr("Version {0} is available", current.update.label)
+                        is UpdateState.Downloading -> tr("Downloading {0}: {1}%", current.update.label, (current.progress * 100).toInt())
+                        is UpdateState.Ready -> tr("Version {0} will be installed when you quit", current.update.label)
                         is UpdateState.Failed -> current.message
                     },
                     style = MaterialTheme.typography.bodySmall,
@@ -274,11 +286,10 @@ fun SettingsScreen() {
             }
         }
 
-        Section("Problems") {
+        Section(tr("Problems")) {
             var logStatus by remember { mutableStateOf("") }
             Text(
-                "If something goes wrong or the app closes by itself, save the logs and send the file to whoever helps you. " +
-                    "They include the last three sessions, so it also works after restarting.",
+                tr("If something goes wrong or the app closes by itself, save the logs and send the file to whoever helps you. They include the last three sessions, so it also works after restarting."),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -289,23 +300,23 @@ fun SettingsScreen() {
                         val file = File(folder, "CloudStream-logs-${LocalDate.now()}.txt")
                         file.writeText(AppLog.shareableText())
                         runCatching { Desktop.getDesktop().open(folder) }
-                        "Saved ${file.absolutePath}"
-                    }.getOrElse { "Could not save the logs: ${it.message}" }
-                }) { Text("Save logs to a file") }
+                        tr("Saved {0}", file.absolutePath)
+                    }.getOrElse { tr("Could not save the logs: {0}", it.message) }
+                }) { Text(tr("Save logs to a file")) }
                 TextButton(onClick = {
                     Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(AppLog.shareableText()), null)
-                    logStatus = "Copied, paste it in a message or a text file"
-                }) { Text("Copy logs") }
-                TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppLog.dir) } }) { Text("Open logs folder") }
+                    logStatus = tr("Copied, paste it in a message or a text file")
+                }) { Text(tr("Copy logs")) }
+                TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppLog.dir) } }) { Text(tr("Open logs folder")) }
             }
             if (logStatus.isNotEmpty()) {
                 Text(logStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
-        Section("About") {
-            Text("CloudStream for desktop, running on ${AppDirs.os.name}", style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = { openInBrowser("https://github.com/recloudstream/cloudstream") }) { Text("Source code") }
+        Section(tr("About")) {
+            Text(tr("CloudStream for desktop, running on {0}", AppDirs.os.name), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { openInBrowser("https://github.com/recloudstream/cloudstream") }) { Text(tr("Source code")) }
         }
         Spacer(Modifier.height(32.dp))
     }

@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -98,7 +99,7 @@ private fun LoadResponse.episodeGroups(): EpisodeGroups? {
         else -> return null
     }
     val names = (this as? EpisodeResponse)?.seasonNames.orEmpty().associate { data ->
-        data.season to (data.name ?: "Season ${data.displaySeason ?: data.season}")
+        data.season to (data.name ?: tr("Season {0}", data.displaySeason ?: data.season))
     }
     return EpisodeGroups(
         byDub = episodes.mapValues { (_, list) ->
@@ -110,18 +111,18 @@ private fun LoadResponse.episodeGroups(): EpisodeGroups? {
 
 private fun Episode.label(index: Int): String {
     val number = episode ?: (index + 1)
-    val prefix = if (season != null) "S$season E$number" else "Episode $number"
+    val prefix = if (season != null) tr("S{0} E{1}", season, number) else tr("Episode {0}", number)
     return if (name.isNullOrBlank()) prefix else "$prefix · $name"
 }
 
 private suspend fun load(media: MediaEntry): ResultState {
     val api = APIHolder.getApiFromNameNull(media.apiName)
-        ?: return ResultState.Error("The extension ${media.apiName} is not installed or failed to load")
+        ?: return ResultState.Error(tr("The extension {0} is not installed or failed to load", media.apiName))
     return try {
         val response = withContext(Dispatchers.IO) {
             withTimeout(api.loadTimeoutMs ?: 60_000L) { api.load(media.url) }
         }
-        response?.let { ResultState.Loaded(it) } ?: ResultState.Error("Nothing returned by ${api.name}")
+        response?.let { ResultState.Loaded(it) } ?: ResultState.Error(tr("Nothing returned by {0}", api.name))
     } catch (t: Throwable) {
         logError(t)
         ResultState.Error(t.message ?: t.javaClass.simpleName)
@@ -196,11 +197,11 @@ fun ResultScreen(media: MediaEntry) {
 
     Box(Modifier.fillMaxSize()) {
         when (val current = state) {
-            ResultState.Loading -> LoadingBox("Loading ${media.name}")
+            ResultState.Loading -> LoadingBox(tr("Loading {0}", media.name))
             is ResultState.Error -> MessageBox(
-                "Could not load ${media.name}",
+                tr("Could not load {0}", media.name),
                 current.message,
-                action = "Retry" to { reloadKey++ },
+                action = tr("Retry") to { reloadKey++ },
             )
 
             is ResultState.Loaded -> ResultContent(media, current.response)
@@ -209,7 +210,7 @@ fun ResultScreen(media: MediaEntry) {
             onClick = { navigator.back() },
             modifier = Modifier.padding(8.dp).background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50)),
         ) {
-            Icon(painterResource(Res.drawable.arrow_back), "Back", tint = Color.White)
+            Icon(painterResource(Res.drawable.arrow_back), tr("Back"), tint = Color.White)
         }
     }
 }
@@ -293,12 +294,12 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                 }) {
                                     Icon(painterResource(Res.drawable.play), null)
                                     Spacer(Modifier.width(6.dp))
-                                    Text(if (positions[movieData]?.positionMs?.let { it > 0 } == true) "Resume" else "Play")
+                                    Text(if (positions[movieData]?.positionMs?.let { it > 0 } == true) tr("Resume") else tr("Play"))
                                 }
 
                                 response is TorrentLoadResponse -> Button(onClick = {
                                     (response.magnet ?: response.torrent)?.let(::openInBrowser)
-                                }) { Text("Open in torrent client") }
+                                }) { Text(tr("Open in torrent client")) }
 
                                 episodes.isNotEmpty() -> Button(onClick = {
                                     // Continue with the first unfinished episode of this season
@@ -307,7 +308,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                 }) {
                                     Icon(painterResource(Res.drawable.play), null)
                                     Spacer(Modifier.width(6.dp))
-                                    Text("Play")
+                                    Text(tr("Play"))
                                 }
                             }
                             if (movieData != null && response !is LiveStreamLoadResponse) {
@@ -320,7 +321,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                 OutlinedButton(onClick = { listMenu = true }) {
                                     Icon(painterResource(if (saved) Res.drawable.bookmark else Res.drawable.bookmark_border), null)
                                     Spacer(Modifier.width(6.dp))
-                                    Text(if (saved) list.title else "Bookmark")
+                                    Text(if (saved) list.title else tr("Bookmark"))
                                 }
                                 DropdownMenu(listMenu, onDismissRequest = { listMenu = false }) {
                                     WatchList.entries.forEach { option ->
@@ -334,7 +335,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                     }
                                     if (saved) {
                                         HorizontalDivider()
-                                        DropdownMenuItem(text = { Text("Remove bookmark") }, onClick = {
+                                        DropdownMenuItem(text = { Text(tr("Remove bookmark")) }, onClick = {
                                             listMenu = false
                                             AppData.toggleBookmark(entry)
                                         })
@@ -344,7 +345,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                             OutlinedButton(onClick = { openInBrowser(response.url) }) {
                                 Icon(painterResource(Res.drawable.open_in_new), null)
                                 Spacer(Modifier.width(6.dp))
-                                Text("Website")
+                                Text(tr("Website"))
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -353,7 +354,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                             IconButton(onClick = { AppData.toggleLike(entry, response.year) }) {
                                 Icon(
                                     painterResource(if (rating?.liked == true) Res.drawable.favorite else Res.drawable.favorite_border),
-                                    if (rating?.liked == true) "Unlike" else "Like",
+                                    if (rating?.liked == true) tr("Unlike") else tr("Like"),
                                     tint = if (rating?.liked == true) Color(0xFFFF8000) else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -365,7 +366,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
 
         item {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (response.comingSoon) Pill("Coming soon")
+                if (response.comingSoon) Pill(tr("Coming soon"))
                 response.plot?.let {
                     Text(it, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.widthIn(max = 900.dp))
                 }
@@ -400,12 +401,12 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                 FilterChip(
                                     season == key,
                                     onClick = { season = key },
-                                    label = { Text(key?.let { groups.seasonNames[it] ?: "Season $it" } ?: "Episodes") },
+                                    label = { Text(key?.let { groups.seasonNames[it] ?: tr("Season {0}", it) } ?: "Episodes") },
                                 )
                             }
                         }
                     }
-                    if (episodes.isEmpty()) Text("No episodes found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (episodes.isEmpty()) Text(tr("No episodes found"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             items(episodes.size, key = { episodes[it].data + it }) { index ->
@@ -430,7 +431,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
         response.recommendations?.takeIf { it.isNotEmpty() }?.let { recommendations ->
             item {
                 Spacer(Modifier.height(16.dp))
-                SearchResponseRow("Recommended", recommendations)
+                SearchResponseRow(tr("Recommended"), recommendations)
                 Spacer(Modifier.height(24.dp))
             }
         }

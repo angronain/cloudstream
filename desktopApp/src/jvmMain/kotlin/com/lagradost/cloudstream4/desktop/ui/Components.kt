@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.ContextMenuArea
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
@@ -152,7 +153,7 @@ fun PosterCard(
                 } else if (hovered && onPlay != null) {
                     Icon(
                         painterResource(Res.drawable.play),
-                        "Play",
+                        tr("Play"),
                         Modifier.align(Alignment.Center).size(48.dp)
                             .clip(RoundedCornerShape(50))
                             .background(Color.Black.copy(alpha = 0.6f))
@@ -193,11 +194,11 @@ fun PosterCard(
 /** Opening the page and bookmarking, the right-click menu of every card */
 fun mediaMenu(entry: MediaEntry, navigator: Navigator): List<ContextMenuItem> {
     val current = AppData.watchList(entry.url)
-    return listOf(ContextMenuItem("Open page") { navigator.push(Route.Result(entry)) }) +
+    return listOf(ContextMenuItem(tr("Open page")) { navigator.push(Route.Result(entry)) }) +
         WatchList.entries.filter { it != current }.map { list ->
-            ContextMenuItem(if (current == null) "Add to ${list.title}" else "Move to ${list.title}") { AppData.setWatchList(entry, list) }
+            ContextMenuItem(if (current == null) tr("Add to {0}", list.title) else tr("Move to {0}", list.title)) { AppData.setWatchList(entry, list) }
         } +
-        listOfNotNull(current?.let { ContextMenuItem("Remove bookmark") { AppData.toggleBookmark(entry) } })
+        listOfNotNull(current?.let { ContextMenuItem(tr("Remove bookmark")) { AppData.toggleBookmark(entry) } })
 }
 
 @Composable
@@ -260,13 +261,13 @@ fun ContinueWatchingCard(
         onPlay = ::play,
         isPreparing = isPreparing,
         menu = {
-            listOf(ContextMenuItem("Play", ::play)) + mediaMenu(progress.media, navigator) + listOfNotNull(
+            listOf(ContextMenuItem(tr("Play"), ::play)) + mediaMenu(progress.media, navigator) + listOfNotNull(
                 progress.episodeData?.let { data ->
-                    ContextMenuItem(if (progress.episodeName != null) "Mark episode as watched" else "Mark as watched") {
+                    ContextMenuItem(if (progress.episodeName != null) tr("Mark episode as watched") else tr("Mark as watched")) {
                         AppData.markWatched(data, progress.durationMs)
                     }
                 },
-                ContextMenuItem("Remove from history") { AppData.removeHistory(progress.media.url) },
+                ContextMenuItem(tr("Remove from history")) { AppData.removeHistory(progress.media.url) },
             ) + extraMenu()
         },
         onClick = { navigator.push(Route.Result(progress.media)) },

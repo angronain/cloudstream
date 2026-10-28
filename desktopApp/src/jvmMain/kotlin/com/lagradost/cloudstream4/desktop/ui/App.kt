@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -86,8 +87,8 @@ fun App(navigator: Navigator) {
     LaunchedEffect(Unit) {
         Updater.state.collect { update ->
             val (message, action, onAction) = when (update) {
-                is UpdateState.Ready -> Triple("CloudStream ${update.update.label} is ready to install", "Restart", Updater::installAndRestart)
-                is UpdateState.Available -> Triple("CloudStream ${update.update.label} is available", "Download") {
+                is UpdateState.Ready -> Triple(tr("CloudStream {0} is ready to install", update.update.label), tr("Restart"), Updater::installAndRestart)
+                is UpdateState.Available -> Triple(tr("CloudStream {0} is available", update.update.label), tr("Download")) {
                     if (Updater.canInstall) Updater.download(update.update) else openInBrowser(update.update.asset.downloadUrl)
                 }
                 else -> return@collect

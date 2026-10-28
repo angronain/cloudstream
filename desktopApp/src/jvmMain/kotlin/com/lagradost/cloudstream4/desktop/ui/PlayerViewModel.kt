@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import com.lagradost.cloudstream3.APIHolder
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
@@ -141,7 +142,7 @@ class PlayerViewModel(
     private fun loadOnlineLinks(initial: PlayerState = PlayerState()) {
         val api = APIHolder.getApiFromNameNull(apiName)
         if (api == null) {
-            _state.value = PlayerState(isLoadingLinks = false, error = "The extension $apiName is not loaded")
+            _state.value = PlayerState(isLoadingLinks = false, error = tr("The extension {0} is not loaded", apiName))
             return
         }
         _state.value = initial
@@ -181,7 +182,7 @@ class PlayerViewModel(
                 s.copy(
                     isLoadingLinks = false,
                     selectedLink = s.selectedLink ?: preferredLink(s.links),
-                    error = if (s.links.isEmpty()) "No playable links found" else null,
+                    error = if (s.links.isEmpty()) tr("No playable links found") else null,
                 )
             }
         }
@@ -203,7 +204,7 @@ class PlayerViewModel(
             _state.update {
                 it.copy(
                     selectedLink = next,
-                    error = if (next == null && !it.isLoadingLinks) "None of the links could be played" else null,
+                    error = if (next == null && !it.isLoadingLinks) tr("None of the links could be played") else null,
                 )
             }
             return next != null || s.isLoadingLinks
@@ -212,7 +213,7 @@ class PlayerViewModel(
         val next = s.links.getOrNull(index + 1)
         _state.update {
             if (next != null) it.copy(selectedLink = next)
-            else it.copy(error = if (it.isLoadingLinks) null else "None of the links could be played")
+            else it.copy(error = if (it.isLoadingLinks) null else tr("None of the links could be played"))
         }
         return next != null
     }

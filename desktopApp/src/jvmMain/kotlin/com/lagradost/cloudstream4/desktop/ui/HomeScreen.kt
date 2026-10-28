@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -157,7 +158,7 @@ class HomeViewModel(private val scope: CoroutineScope) {
                     isLoading = false,
                     cached = if (it.rows.isEmpty()) it.cached else emptyList(),
                     error = if (it.rows.isEmpty() && it.cached.isEmpty()) errors.firstOrNull()?.let { e -> e.message ?: e.javaClass.simpleName }
-                        ?: "Nothing found" else null
+                        ?: tr("Nothing found") else null
                 )
             }
         }
@@ -181,10 +182,10 @@ fun HomeScreen(viewModel: HomeViewModel) {
     if (providers.isEmpty()) {
         val anyProviders = remember(providersVersion) { PluginManager.providers().isNotEmpty() }
         MessageBox(
-            "No extensions with a home page installed",
-            if (anyProviders) "Your installed extensions only support search, use the Search tab or install more extensions."
-            else "Add a repository and install an extension (a site provider, not a repository helper) to start browsing.",
-            action = "Open extensions" to { navigator.select(Tab.Extensions) },
+            tr("No extensions with a home page installed"),
+            if (anyProviders) tr("Your installed extensions only support search, use the Search tab or install more extensions.")
+            else tr("Add a repository and install an extension (a site provider, not a repository helper) to start browsing."),
+            action = tr("Open extensions") to { navigator.select(Tab.Extensions) },
         )
         return
     }
@@ -199,7 +200,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
                     var expanded by remember { mutableStateOf(false) }
                     Box {
                         OutlinedButton(onClick = { expanded = true }) {
-                            Text(state.provider ?: "Select provider")
+                            Text(state.provider ?: tr("Select provider"))
                             Spacer(Modifier.width(4.dp))
                             Icon(painterResource(Res.drawable.arrow_down), null)
                         }
@@ -216,7 +217,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = viewModel::load) { Icon(painterResource(Res.drawable.refresh), "Reload") }
+                    IconButton(onClick = viewModel::load) { Icon(painterResource(Res.drawable.refresh), tr("Reload")) }
                 }
                 if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             }
@@ -224,15 +225,15 @@ fun HomeScreen(viewModel: HomeViewModel) {
             val withNew = if (newEpisodesOn) history.filter { (episodeChecks[it.media.url]?.newCount ?: 0) > 0 } else emptyList()
             if (withNew.isNotEmpty()) {
                 item {
-                    SectionTitle("New episodes")
+                    SectionTitle(tr("New episodes"))
                     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
                         items(withNew, key = { it.media.url }) { progress ->
                             val count = episodeChecks[progress.media.url]?.newCount ?: 0
                             ContinueWatchingCard(
                                 progress,
                                 null,
-                                subtitle = if (count == 1) "1 new episode" else "$count new episodes",
-                                extraMenu = { listOf(ContextMenuItem("Dismiss") { AppData.clearNewEpisodes(progress.media.url) }) },
+                                subtitle = if (count == 1) tr("1 new episode") else tr("{0} new episodes", count),
+                                extraMenu = { listOf(ContextMenuItem(tr("Dismiss")) { AppData.clearNewEpisodes(progress.media.url) }) },
                             )
                         }
                     }
@@ -245,7 +246,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
             }
             if (watching.isNotEmpty()) {
                 item {
-                    SectionTitle("Continue watching")
+                    SectionTitle(tr("Continue watching"))
                     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
                         items(watching.take(20), key = { it.media.url }) { progress ->
                             ContinueWatchingCard(progress, progress.episodeData?.let { positions[it]?.fraction })
@@ -256,8 +257,8 @@ fun HomeScreen(viewModel: HomeViewModel) {
 
             if (bookmarks.isNotEmpty()) {
                 item {
-                    SectionTitle("Bookmarks") {
-                        TextButton(onClick = { navigator.select(Tab.Library) }) { Text("See all") }
+                    SectionTitle(tr("Bookmarks")) {
+                        TextButton(onClick = { navigator.select(Tab.Library) }) { Text(tr("See all")) }
                     }
                     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
                         items(bookmarks.take(20), key = { it.url }) { MediaEntryCard(it) }
@@ -284,10 +285,10 @@ fun HomeScreen(viewModel: HomeViewModel) {
             if (state.error != null) {
                 item {
                     MessageBox(
-                        "Could not load ${state.provider}",
+                        tr("Could not load {0}", state.provider),
                         state.error,
                         Modifier.fillMaxWidth(),
-                        action = "Retry" to viewModel::load,
+                        action = tr("Retry") to viewModel::load,
                     )
                 }
             }

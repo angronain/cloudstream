@@ -119,12 +119,14 @@ data class Rating(
 enum class PlayerKind { Internal, External }
 
 /** The lists bookmarks are sorted into, like in the Android app */
-enum class WatchList(val title: String) {
+enum class WatchList(private val english: String) {
     Watching("Watching"),
     PlanToWatch("Plan to watch"),
     Completed("Completed"),
     OnHold("On hold"),
-    Dropped("Dropped"),
+    Dropped("Dropped");
+
+    val title: String get() = tr(english)
 }
 
 data class Settings(
@@ -143,6 +145,8 @@ data class Settings(
     val checkForUpdates: Boolean = true,
     /** Download updates in the background and install them on restart or quit */
     val autoUpdate: Boolean = true,
+    /** Language code of the app, empty follows the system */
+    val language: String = "",
     /** Player volume and speed, kept between episodes and launches */
     val playerVolume: Int = 100,
     val playerRate: Float = 1f,
@@ -348,7 +352,7 @@ object AppData {
     /** Replaces the library and settings with the ones in a backup, returns how many parts were restored */
     fun restoreBackup(file: File): Int {
         val backup = mapper.readTree(file)
-        require(backup.path("app").asText() == "CloudStream desktop") { "Not a CloudStream desktop backup" }
+        require(backup.path("app").asText() == "CloudStream desktop") { tr("Not a CloudStream desktop backup") }
         // Everything is read before anything changes, so a broken backup changes nothing
         val values = backupFlows.mapNotNull { (key, flow) ->
             val node = backup.get(key) ?: return@mapNotNull null

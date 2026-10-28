@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -155,16 +156,16 @@ fun PipWindow(
             AnimatedVisibility(hovered || !engine.isPlaying, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))) {
                     // Inset from the corners, which are the resize grips
-                    PipButton(Res.drawable.close, "Close", Modifier.align(Alignment.TopStart).padding(10.dp), onClose)
-                    PipButton(Res.drawable.pip, "Back to the player", Modifier.align(Alignment.TopEnd).padding(10.dp), onExpand)
+                    PipButton(Res.drawable.close, tr("Close"), Modifier.align(Alignment.TopStart).padding(10.dp), onClose)
+                    PipButton(Res.drawable.pip, tr("Back to the player"), Modifier.align(Alignment.TopEnd).padding(10.dp), onExpand)
                     Row(
                         Modifier.align(Alignment.Center),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        PipButton(Res.drawable.replay, "Back") { engine.skip(-seekMs) }
-                        PipButton(if (engine.isPlaying) Res.drawable.pause else Res.drawable.play, "Play/Pause", onClick = engine::togglePause)
-                        PipButton(Res.drawable.forward, "Forward") { engine.skip(seekMs) }
+                        PipButton(Res.drawable.replay, tr("Back")) { engine.skip(-seekMs) }
+                        PipButton(if (engine.isPlaying) Res.drawable.pause else Res.drawable.play, tr("Play/Pause"), onClick = engine::togglePause)
+                        PipButton(Res.drawable.forward, tr("Forward")) { engine.skip(seekMs) }
                     }
                     if (engine.lengthMs > 0) {
                         LinearProgressIndicator(

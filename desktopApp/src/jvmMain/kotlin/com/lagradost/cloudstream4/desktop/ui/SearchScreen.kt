@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,12 +49,14 @@ import org.jetbrains.compose.resources.painterResource
 
 data class ProviderResults(val provider: String, val items: List<SearchResponse>, val error: String? = null)
 
-enum class SearchFilter(val title: String, val types: Set<TvType>?) {
+enum class SearchFilter(private val english: String, val types: Set<TvType>?) {
     All("All", null),
     Movies("Movies", setOf(TvType.Movie, TvType.AnimeMovie, TvType.Documentary, TvType.Torrent)),
     Series("TV Series", setOf(TvType.TvSeries, TvType.Cartoon, TvType.AsianDrama, TvType.Documentary)),
     Anime("Anime", setOf(TvType.Anime, TvType.AnimeMovie, TvType.OVA)),
-    Live("Live", setOf(TvType.Live)),
+    Live("Live", setOf(TvType.Live));
+
+    val title: String get() = tr(english)
 }
 
 data class SearchState(
@@ -120,7 +123,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
         OutlinedTextField(
             value = state.query,
             onValueChange = viewModel::onQueryChange,
-            placeholder = { Text("Search all extensions") },
+            placeholder = { Text(tr("Search all extensions")) },
             leadingIcon = { Icon(painterResource(Res.drawable.search), null) },
             singleLine = true,
             shape = RoundedCornerShape(12.dp),
@@ -141,7 +144,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
         if (state.pending > 0) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
 
         if (PluginManager.providers().isEmpty()) {
-            MessageBox("No extensions installed", "Install extensions from the Extensions tab to search.")
+            MessageBox(tr("No extensions installed"), tr("Install extensions from the Extensions tab to search."))
             return
         }
 
@@ -150,7 +153,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                 when {
                     result.items.isNotEmpty() -> SearchResponseRow(result.provider, result.items)
                     else -> Text(
-                        "${result.provider}: ${result.error ?: "No results"}",
+                        "${result.provider}: ${result.error ?: tr("No results")}",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

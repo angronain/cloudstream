@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -47,18 +48,18 @@ fun ExtensionSettingsScreen(onBack: () -> Unit) {
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(painterResource(Res.drawable.arrow_back), "Back") }
+            IconButton(onClick = onBack) { Icon(painterResource(Res.drawable.arrow_back), tr("Back")) }
             Column {
-                Text("Extension settings", style = MaterialTheme.typography.headlineSmall)
+                Text(tr("Extension settings"), style = MaterialTheme.typography.headlineSmall)
                 Text(
-                    "Values extensions saved through their settings screen. Restart the app after changing them.",
+                    tr("Values extensions saved through their settings screen. Restart the app after changing them."),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         Spacer(Modifier.height(12.dp))
         if (names.isEmpty()) {
-            MessageBox("No extension has saved settings yet")
+            MessageBox(tr("No extension has saved settings yet"))
             return
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -106,13 +107,13 @@ private fun PreferenceStoreCard(name: String, version: Int, onChanged: () -> Uni
                 IconButton(onClick = {
                     prefs.edit().remove(key).apply()
                     onChanged()
-                }) { Icon(painterResource(Res.drawable.delete), "Remove $key") }
+                }) { Icon(painterResource(Res.drawable.delete), tr("Remove {0}", key)) }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(newKey, { newKey = it }, label = { Text("New key, e.g. token") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(newKey, { newKey = it }, label = { Text(tr("New key, e.g. token")) }, singleLine = true, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
-            OutlinedTextField(newValue, { newValue = it }, label = { Text("Value") }, singleLine = true, modifier = Modifier.weight(2f))
+            OutlinedTextField(newValue, { newValue = it }, label = { Text(tr("Value")) }, singleLine = true, modifier = Modifier.weight(2f))
             Spacer(Modifier.width(8.dp))
             OutlinedButton(
                 onClick = {
@@ -122,7 +123,7 @@ private fun PreferenceStoreCard(name: String, version: Int, onChanged: () -> Uni
                     onChanged()
                 },
                 enabled = newKey.isNotBlank(),
-            ) { Text("Add") }
+            ) { Text(tr("Add")) }
         }
     }
 }

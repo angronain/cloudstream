@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -7,13 +8,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.lagradost.cloudstream4.desktop.data.MediaEntry
 
-enum class Tab(val title: String) {
+enum class Tab(private val english: String) {
     Home("Home"),
     Search("Search"),
     Library("Library"),
     Downloads("Downloads"),
     Extensions("Extensions"),
-    Settings("Settings"),
+    Settings("Settings");
+
+    val title: String get() = tr(english)
 }
 
 /** A single episode or movie that can be played */

@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,8 +88,8 @@ class ExtensionsViewModel(private val scope: CoroutineScope, private val notify:
         scope.launch {
             val repo = PluginManager.addRepository(input)
             _state.update { it.copy(isAddingRepository = false) }
-            if (repo == null) notify("Not a valid repository: $input") else {
-                notify("Added ${repo.name}")
+            if (repo == null) notify(tr("Not a valid repository: {0}", input)) else {
+                notify(tr("Added {0}", repo.name))
                 open(repo)
             }
         }
@@ -97,7 +98,7 @@ class ExtensionsViewModel(private val scope: CoroutineScope, private val notify:
     fun removeRepository(repo: RepositoryEntry) = scope.launch {
         PluginManager.removeRepository(repo.url)
         _state.update { it.copy(openRepository = null, repositoryPlugins = it.repositoryPlugins - repo.url) }
-        notify("Removed ${repo.name}")
+        notify(tr("Removed {0}", repo.name))
     }
 
     fun showSettings(show: Boolean) = _state.update { it.copy(showSettings = show) }
@@ -114,7 +115,7 @@ class ExtensionsViewModel(private val scope: CoroutineScope, private val notify:
         scope.launch {
             val repository = PluginManager.fetchRepository(repo.url)
             val result = if (repository == null) {
-                RepositoryPlugins(isLoading = false, error = "Could not load the repository")
+                RepositoryPlugins(isLoading = false, error = tr("Could not load the repository"))
             } else {
                 RepositoryPlugins(repository, PluginManager.fetchRepositoryPlugins(repository).sortedBy { it.name.lowercase() }, false)
             }
@@ -129,8 +130,8 @@ class ExtensionsViewModel(private val scope: CoroutineScope, private val notify:
         busy(plugin.internalName, true)
         scope.launch {
             PluginManager.install(repo.url, plugin)
-                .onSuccess { notify("Installed ${plugin.name}") }
-                .onFailure { notify("Failed to install ${plugin.name}: ${it.message}") }
+                .onSuccess { notify(tr("Installed {0}", plugin.name)) }
+                .onFailure { notify(tr("Failed to install {0}: {1}", plugin.name, it.message)) }
             busy(plugin.internalName, false)
         }
     }
@@ -141,7 +142,7 @@ class ExtensionsViewModel(private val scope: CoroutineScope, private val notify:
         scope.launch {
             PluginManager.uninstall(installed)
             busy(plugin.internalName, false)
-            notify("Removed ${plugin.name}")
+            notify(tr("Removed {0}", plugin.name))
         }
     }
 
@@ -156,7 +157,7 @@ class ExtensionsViewModel(private val scope: CoroutineScope, private val notify:
         scope.launch {
             val count = PluginManager.updateAll()
             _state.update { it.copy(isUpdating = false) }
-            notify(if (count == 0) "All extensions are up to date" else "Updated $count extensions")
+            notify(if (count == 0) tr("All extensions are up to date") else tr("Updated {0} extensions", count))
         }
     }
 }
@@ -182,13 +183,13 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Extensions", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
-                OutlinedButton(onClick = { viewModel.showSettings(true) }) { Text("Extension settings") }
+                Text(tr("Extensions"), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+                OutlinedButton(onClick = { viewModel.showSettings(true) }) { Text(tr("Extension settings")) }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = viewModel::updateAll, enabled = !state.isUpdating && plugins.isNotEmpty()) {
                     Icon(painterResource(Res.drawable.update), null)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (state.isUpdating) "Updating..." else "Update all")
+                    Text(if (state.isUpdating) tr("Updating...") else tr("Update all"))
                 }
             }
             Text(
@@ -200,7 +201,7 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    label = { Text("Repository URL or shortcode") },
+                    label = { Text(tr("Repository URL or shortcode")) },
                     singleLine = true,
                     modifier = Modifier.weight(1f).onEnter { viewModel.addRepository(input).also { input = "" } },
                 )
@@ -211,7 +212,7 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
                         input = ""
                     },
                     enabled = !state.isAddingRepository && input.isNotBlank(),
-                ) { Text(if (state.isAddingRepository) "Adding..." else "Add repository") }
+                ) { Text(if (state.isAddingRepository) tr("Adding...") else tr("Add repository")) }
             }
             Spacer(Modifier.height(16.dp))
         }
@@ -221,7 +222,7 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
                 Column(
                     Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(10.dp)).padding(12.dp)
                 ) {
-                    Text("Some extensions failed to load", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text(tr("Some extensions failed to load"), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                     errors.forEach { Text("${it.name}: ${it.message}", color = MaterialTheme.colorScheme.onErrorContainer) }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -231,8 +232,8 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
         if (repositories.isEmpty()) {
             item {
                 MessageBox(
-                    "No repositories added",
-                    "Paste a repository link above. Repositories are published by the community, CloudStream does not provide any.",
+                    tr("No repositories added"),
+                    tr("Paste a repository link above. Repositories are published by the community, CloudStream does not provide any."),
                     Modifier.fillMaxWidth(),
                 )
             }
@@ -256,7 +257,7 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
                 }
                 Text("$count installed", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 IconButton(onClick = { viewModel.removeRepository(repo) }) {
-                    Icon(painterResource(Res.drawable.delete), "Remove repository")
+                    Icon(painterResource(Res.drawable.delete), tr("Remove repository"))
                 }
             }
         }
@@ -277,28 +278,28 @@ private fun RepositoryDetails(viewModel: ExtensionsViewModel, state: ExtensionsS
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { viewModel.open(null) }) { Icon(painterResource(Res.drawable.arrow_back), "Back") }
+            IconButton(onClick = { viewModel.open(null) }) { Icon(painterResource(Res.drawable.arrow_back), tr("Back")) }
             Column(Modifier.weight(1f)) {
                 Text(repo.name, style = MaterialTheme.typography.headlineSmall)
                 data.repository?.description?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-            OutlinedButton(onClick = { viewModel.installAll(repo) }, enabled = !data.isLoading) { Text("Install all") }
+            OutlinedButton(onClick = { viewModel.installAll(repo) }, enabled = !data.isLoading) { Text(tr("Install all")) }
         }
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(query, { query = it }, label = { Text("Filter") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(query, { query = it }, label = { Text(tr("Filter")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         if (languages.size > 1) {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.padding(vertical = 8.dp),
             ) {
-                item { FilterChip(language == null, { language = null }, label = { Text("All") }) }
+                item { FilterChip(language == null, { language = null }, label = { Text(tr("All")) }) }
                 items(languages) { lang -> FilterChip(language == lang, { language = lang }, label = { Text(lang) }) }
             }
         }
 
         when {
-            data.isLoading -> LoadingBox("Loading extensions")
-            data.error != null -> MessageBox(data.error, action = "Retry" to { viewModel.refresh(repo) })
+            data.isLoading -> LoadingBox(tr("Loading extensions"))
+            data.error != null -> MessageBox(data.error, action = tr("Retry") to { viewModel.refresh(repo) })
             else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 items(shown, key = { it.internalName }) { plugin ->
                     val installed = plugins.firstOrNull {
@@ -337,11 +338,11 @@ private fun PluginRow(
                 Text("v${plugin.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 plugin.language?.let { Pill(it) }
                 when (plugin.status) {
-                    0 -> Pill("Down")
-                    2 -> Pill("Slow")
-                    3 -> Pill("Beta")
+                    0 -> Pill(tr("Down"))
+                    2 -> Pill(tr("Slow"))
+                    3 -> Pill(tr("Beta"))
                 }
-                if (plugin.jarUrl == null) Pill("Android build")
+                if (plugin.jarUrl == null) Pill(tr("Android build"))
             }
             plugin.description?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -358,9 +359,9 @@ private fun PluginRow(
         Box(Modifier.width(120.dp), contentAlignment = Alignment.CenterEnd) {
             when {
                 isBusy -> CircularProgressIndicator(Modifier.size(24.dp))
-                installedVersion == null -> Button(onClick = onInstall, enabled = plugin.status != 0) { Text("Install") }
-                installedVersion < plugin.version -> Button(onClick = onInstall) { Text("Update") }
-                else -> OutlinedButton(onClick = onUninstall) { Text("Remove") }
+                installedVersion == null -> Button(onClick = onInstall, enabled = plugin.status != 0) { Text(tr("Install")) }
+                installedVersion < plugin.version -> Button(onClick = onInstall) { Text(tr("Update")) }
+                else -> OutlinedButton(onClick = onUninstall) { Text(tr("Remove")) }
             }
         }
     }

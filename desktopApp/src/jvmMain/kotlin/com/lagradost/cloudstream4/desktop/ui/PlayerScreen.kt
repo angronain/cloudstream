@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -394,7 +395,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             SwipeAxis.Volume -> {
                 swipe.amount += delta.y * SWIPE_VOLUME_PER_UNIT
                 engine.changeVolume(swipe.startVolume + swipe.amount.toInt())
-                showSwipeLabel("Volume ${engine.volume}%")
+                showSwipeLabel(tr("Volume {0}%", engine.volume))
             }
 
             SwipeAxis.None -> Unit
@@ -467,17 +468,17 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 color = Color.Black.copy(alpha = 0.85f),
             ) {
                 Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Keyboard shortcuts", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    Text(tr("Keyboard shortcuts"), color = Color.White, style = MaterialTheme.typography.titleMedium)
                     listOf(
-                        "Space or K" to "Play / pause",
-                        "← or J, → or L" to "Back / forward ${settings.seekSeconds}s",
-                        "↑ ↓" to "Volume",
-                        "M" to "Mute",
-                        "F or double click" to "Fullscreen",
-                        "N" to "Next episode",
-                        "P" to "Picture in picture",
-                        "Esc" to "Leave fullscreen, then the player",
-                        "?" to "Show or hide this list",
+                        tr("Space or K") to tr("Play / pause"),
+                        tr("← or J, → or L") to tr("Back / forward {0}s", settings.seekSeconds),
+                        "↑ ↓" to tr("Volume"),
+                        "M" to tr("Mute"),
+                        tr("F or double click") to tr("Fullscreen"),
+                        "N" to tr("Next episode"),
+                        "P" to tr("Picture in picture"),
+                        tr("Esc") to tr("Leave fullscreen, then the player"),
+                        "?" to tr("Show or hide this list"),
                     ).forEach { (keys, action) ->
                         Row {
                             Text(keys, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.width(160.dp))
@@ -506,13 +507,13 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 Text(
                     when {
                         state.error != null -> state.error!!
-                        state.selectedLink == null -> "Loading links (${state.links.size} found)"
-                        else -> "Buffering ${state.selectedLink?.label()}"
+                        state.selectedLink == null -> tr("Loading links ({0} found)", state.links.size)
+                        else -> tr("Buffering {0}", state.selectedLink?.label())
                     },
                     color = Color.White,
                 )
                 if (state.error != null) {
-                    TextButton(onClick = viewModel::loadLinks) { Text("Retry") }
+                    TextButton(onClick = viewModel::loadLinks) { Text(tr("Retry")) }
                 }
             }
         }
@@ -537,7 +538,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 color = Color.Black.copy(alpha = 0.8f),
             ) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Next episode in ${(remainingMs + 999) / 1000}s", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+                    Text(tr("Next episode in {0}s", (remainingMs + 999) / 1000), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
                     Text(route.playlist[route.index + 1].title, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
@@ -545,8 +546,8 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                             focus.requestFocus()
                             saveProgress()
                             playNext()
-                        }) { Text("Play now") }
-                        TextButton(onClick = { nextCancelled = true; focus.requestFocus() }) { Text("Cancel", color = Color.White) }
+                        }) { Text(tr("Play now")) }
+                        TextButton(onClick = { nextCancelled = true; focus.requestFocus() }) { Text(tr("Cancel"), color = Color.White) }
                     }
                 }
             }
@@ -559,7 +560,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(onClick = { navigator.back() }) {
-                        Icon(painterResource(Res.drawable.arrow_back), "Back", tint = Color.White)
+                        Icon(painterResource(Res.drawable.arrow_back), tr("Back"), tint = Color.White)
                     }
                     Column(Modifier.weight(1f)) {
                         Text(playable.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -592,11 +593,11 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         Text(formatTime(engine.lengthMs), color = Color.White)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ControlButton(if (engine.isPlaying) Res.drawable.pause else Res.drawable.play, "Play/Pause") { engine.togglePause() }
-                        ControlButton(Res.drawable.replay, "Back ${settings.seekSeconds}s") { engine.skip(-seekMs) }
-                        ControlButton(Res.drawable.forward, "Forward ${settings.seekSeconds}s") { engine.skip(seekMs) }
-                        if (hasNext) ControlButton(Res.drawable.skip_next, "Next episode") { playNext() }
-                        ControlButton(if (engine.volume == 0) Res.drawable.volume_mute else Res.drawable.volume_up, "Mute") {
+                        ControlButton(if (engine.isPlaying) Res.drawable.pause else Res.drawable.play, tr("Play/Pause")) { engine.togglePause() }
+                        ControlButton(Res.drawable.replay, tr("Back {0}s", settings.seekSeconds)) { engine.skip(-seekMs) }
+                        ControlButton(Res.drawable.forward, tr("Forward {0}s", settings.seekSeconds)) { engine.skip(seekMs) }
+                        if (hasNext) ControlButton(Res.drawable.skip_next, tr("Next episode")) { playNext() }
+                        ControlButton(if (engine.volume == 0) Res.drawable.volume_mute else Res.drawable.volume_up, tr("Mute")) {
                             engine.changeVolume(if (engine.volume == 0) 100 else 0)
                         }
                         Slider(
@@ -608,8 +609,8 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         Text("${engine.volume}%", color = Color.White, style = MaterialTheme.typography.bodySmall)
                         Spacer(Modifier.weight(1f))
 
-                        MenuButton(Res.drawable.sources, "Sources (${state.links.size})", openMenus) { close ->
-                            if (state.isLoadingLinks) DropdownMenuItem(text = { Text("Still loading links...") }, onClick = {}, enabled = false)
+                        MenuButton(Res.drawable.sources, tr("Sources ({0})", state.links.size), openMenus) { close ->
+                            if (state.isLoadingLinks) DropdownMenuItem(text = { Text(tr("Still loading links...")) }, onClick = {}, enabled = false)
                             state.links.forEach { link ->
                                 DropdownMenuItem(
                                     text = { Text(link.label(), fontWeight = if (link == state.selectedLink) FontWeight.Bold else null) },
@@ -620,8 +621,8 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 )
                             }
                         }
-                        MenuButton(Res.drawable.subtitles, "Subtitles", openMenus) { close ->
-                            DropdownMenuItem(text = { Text("Off") }, onClick = {
+                        MenuButton(Res.drawable.subtitles, tr("Subtitles"), openMenus) { close ->
+                            DropdownMenuItem(text = { Text(tr("Off")) }, onClick = {
                                 close()
                                 engine.selectSubtitle(-1)
                                 viewModel.clearSubtitle()
@@ -649,7 +650,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                             // Lines up subtitles made for another release, the menu stays open while adjusting
                             HorizontalDivider()
                             DropdownMenuItem(
-                                text = { Text("Subtitle delay ${if (engine.subtitleDelayMs > 0) "+" else ""}${engine.subtitleDelayMs} ms") },
+                                text = { Text(tr("Subtitle delay {0} ms", "${if (engine.subtitleDelayMs > 0) "+" else ""}${engine.subtitleDelayMs}")) },
                                 onClick = {},
                                 enabled = false,
                             )
@@ -659,12 +660,12 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                         Text(if (step > 0) "+$step" else "$step")
                                     }
                                 }
-                                TextButton(onClick = { engine.changeSubtitleDelay(0) }, enabled = engine.subtitleDelayMs != 0L) { Text("Reset") }
+                                TextButton(onClick = { engine.changeSubtitleDelay(0) }, enabled = engine.subtitleDelayMs != 0L) { Text(tr("Reset")) }
                             }
                         }
                         val otherSources = state.links.filter { it !== state.selectedLink && it.url != state.selectedLink?.url }
                         if (engine.audioTracks.size > 2 || otherSources.isNotEmpty() || engine.audioDelayMs != 0L) {
-                            MenuButton(Res.drawable.audio, "Audio", openMenus) { close ->
+                            MenuButton(Res.drawable.audio, tr("Audio"), openMenus) { close ->
                                 engine.audioTracks.filter { it.id >= 0 }.forEach { track ->
                                     DropdownMenuItem(
                                         text = { Text(track.name, fontWeight = if (track.id == engine.audioTrack) FontWeight.Bold else null) },
@@ -677,7 +678,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 }
                                 // Lines up audio taken from another source, the menu stays open while adjusting
                                 DropdownMenuItem(
-                                    text = { Text("Audio delay ${if (engine.audioDelayMs > 0) "+" else ""}${engine.audioDelayMs} ms") },
+                                    text = { Text(tr("Audio delay {0} ms", "${if (engine.audioDelayMs > 0) "+" else ""}${engine.audioDelayMs}")) },
                                     onClick = {},
                                     enabled = false,
                                 )
@@ -687,12 +688,12 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                             Text(if (step > 0) "+$step" else "$step")
                                         }
                                     }
-                                    TextButton(onClick = { engine.changeAudioDelay(0) }, enabled = engine.audioDelayMs != 0L) { Text("Reset") }
+                                    TextButton(onClick = { engine.changeAudioDelay(0) }, enabled = engine.audioDelayMs != 0L) { Text(tr("Reset")) }
                                 }
                                 if (otherSources.isNotEmpty()) {
                                     HorizontalDivider()
                                     DropdownMenuItem(
-                                        text = { Text("Audio from another source (also streams its video)") },
+                                        text = { Text(tr("Audio from another source (also streams its video)")) },
                                         onClick = {},
                                         enabled = false,
                                     )
@@ -708,7 +709,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 }
                             }
                         }
-                        MenuButton(Res.drawable.speed, "Speed ${engine.rate}x", openMenus) { close ->
+                        MenuButton(Res.drawable.speed, tr("Speed {0}x", engine.rate), openMenus) { close ->
                             listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { rate ->
                                 DropdownMenuItem(text = { Text("${rate}x") }, onClick = {
                                     close()
@@ -716,8 +717,8 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 })
                             }
                         }
-                        ControlButton(Res.drawable.pip, "Picture-in-picture (P)") { enterPip() }
-                        ControlButton(if (isFullscreen) Res.drawable.fullscreen_exit else Res.drawable.fullscreen, "Fullscreen") {
+                        ControlButton(Res.drawable.pip, tr("Picture-in-picture (P)")) { enterPip() }
+                        ControlButton(if (isFullscreen) Res.drawable.fullscreen_exit else Res.drawable.fullscreen, tr("Fullscreen")) {
                             toggleFullscreen()
                         }
                     }
@@ -820,9 +821,9 @@ private fun ExternalPlayerScreen(
             val subtitle: File? = state.subtitles.firstOrNull { it.langTag?.startsWith("en") == true }
                 ?.let { viewModel.downloadSubtitle(it) }
             launched = if (ExternalPlayer.launch(link.playbackUrl(), playable.title, listOfNotNull(subtitle))) {
-                "Playing ${link.label()} in ${ExternalPlayer.detect()?.let { File(it).nameWithoutExtension }}"
+                tr("Playing {0} in {1}", link.label(), ExternalPlayer.detect()?.let { File(it).nameWithoutExtension })
             } else {
-                "No external player found, install VLC or mpv, or set one in Settings"
+                tr("No external player found, install VLC or mpv, or set one in Settings")
             }
         }
     }
@@ -833,19 +834,19 @@ private fun ExternalPlayerScreen(
 
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { navigator.back() }) { Icon(painterResource(Res.drawable.arrow_back), "Back") }
+            IconButton(onClick = { navigator.back() }) { Icon(painterResource(Res.drawable.arrow_back), tr("Back")) }
             Text(playable.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            if (hasNext) TextButton(onClick = playNext) { Text("Next episode") }
+            if (hasNext) TextButton(onClick = playNext) { Text(tr("Next episode")) }
         }
         if (!Vlc.isAvailable && AppData.settings.value.player == PlayerKind.Internal) {
             Text(
-                Vlc.problem ?: "The built-in player needs VLC installed. Install it from videolan.org to play inside CloudStream.",
+                Vlc.problem ?: tr("The built-in player needs VLC installed. Install it from videolan.org to play inside CloudStream."),
                 color = MaterialTheme.colorScheme.error,
             )
-            if (Vlc.problem == null) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text("Download VLC") }
+            if (Vlc.problem == null) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text(tr("Download VLC")) }
         }
         launched?.let { Text(it) }
-        if (state.isLoadingLinks) Text("Loading links (${state.links.size} found)...")
+        if (state.isLoadingLinks) Text(tr("Loading links ({0} found)...", state.links.size))
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(state.links, key = { it.url }) { link ->

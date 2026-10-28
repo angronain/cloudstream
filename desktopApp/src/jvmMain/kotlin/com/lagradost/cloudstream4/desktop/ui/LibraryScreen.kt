@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,9 +33,17 @@ import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.MediaEntry
 import com.lagradost.cloudstream4.desktop.data.WatchList
 
-private enum class LibraryTab(val title: String) { Bookmarks("Bookmarks"), History("History") }
+private enum class LibraryTab(private val english: String) {
+    Bookmarks("Bookmarks"), History("History");
 
-private enum class BookmarkSort(val title: String) { Added("Recently added"), Watched("Recently watched"), Name("A–Z"), Rating("Rating") }
+    val title: String get() = tr(english)
+}
+
+private enum class BookmarkSort(private val english: String) {
+    Added("Recently added"), Watched("Recently watched"), Name("A–Z"), Rating("Rating");
+
+    val title: String get() = tr(english)
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -59,13 +68,13 @@ fun LibraryScreen() {
                 FilterChip(tab == it, onClick = { tab = it }, label = { Text(it.title) })
             }
             if (tab == LibraryTab.History && history.isNotEmpty()) {
-                TextButton(onClick = AppData::clearHistory) { Text("Clear history") }
+                TextButton(onClick = AppData::clearHistory) { Text(tr("Clear history")) }
             }
             if (tab == LibraryTab.Bookmarks) {
                 Spacer(Modifier.weight(1f))
                 Box {
                     var sortMenu by remember { mutableStateOf(false) }
-                    TextButton(onClick = { sortMenu = true }) { Text("Sort: ${sort.title}") }
+                    TextButton(onClick = { sortMenu = true }) { Text(tr("Sort: {0}", sort.title)) }
                     DropdownMenu(sortMenu, onDismissRequest = { sortMenu = false }) {
                         BookmarkSort.entries.forEach { option ->
                             DropdownMenuItem(text = { Text(option.title) }, onClick = {
@@ -84,10 +93,10 @@ fun LibraryScreen() {
                 Modifier.padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilterChip(list == null, onClick = { list = null }, label = { Text("All (${bookmarks.size})") })
+                FilterChip(list == null, onClick = { list = null }, label = { Text(tr("All ({0})", bookmarks.size)) })
                 WatchList.entries.forEach { option ->
                     val count = bookmarks.count { listFor(it) == option }
-                    FilterChip(list == option, onClick = { list = option }, label = { Text("${option.title} ($count)") })
+                    FilterChip(list == option, onClick = { list = option }, label = { Text(tr("{0} ({1})", option.title, count)) })
                 }
             }
         }
@@ -105,11 +114,11 @@ fun LibraryScreen() {
         if (empty) {
             MessageBox(
                 when {
-                    tab == LibraryTab.History -> "Nothing watched yet"
-                    list != null && bookmarks.isNotEmpty() -> "Nothing in ${list?.title}"
-                    else -> "No bookmarks yet"
+                    tab == LibraryTab.History -> tr("Nothing watched yet")
+                    list != null && bookmarks.isNotEmpty() -> tr("Nothing in {0}", list?.title)
+                    else -> tr("No bookmarks yet")
                 },
-                if (tab == LibraryTab.Bookmarks) "Bookmark something from its page to find it here." else null,
+                if (tab == LibraryTab.Bookmarks) tr("Bookmark something from its page to find it here.") else null,
             )
             return
         }

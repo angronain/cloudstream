@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream4.desktop.ui
 
+import com.lagradost.cloudstream4.desktop.data.tr
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.app
@@ -8,7 +9,7 @@ import com.lagradost.cloudstream3.mvvm.logError
 
 /** A part of an episode that can be skipped, in milliseconds */
 data class SkipStamp(val startMs: Long, val endMs: Long, val isIntro: Boolean) {
-    val label: String get() = if (isIntro) "Skip intro" else "Skip credits"
+    val label: String get() = if (isIntro) tr("Skip intro") else tr("Skip credits")
 }
 
 /** Intro and credits times of anime episodes from AniSkip (api.aniskip.com), found by MyAnimeList id */
