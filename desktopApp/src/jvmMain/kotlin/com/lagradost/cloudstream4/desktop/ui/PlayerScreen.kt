@@ -581,6 +581,21 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                     },
                                 )
                             }
+                            // Lines up subtitles made for another release, the menu stays open while adjusting
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Subtitle delay ${if (engine.subtitleDelayMs > 0) "+" else ""}${engine.subtitleDelayMs} ms") },
+                                onClick = {},
+                                enabled = false,
+                            )
+                            Row(Modifier.padding(horizontal = 8.dp)) {
+                                listOf(-500L, -100L, 100L, 500L).forEach { step ->
+                                    TextButton(onClick = { engine.changeSubtitleDelay(engine.subtitleDelayMs + step) }) {
+                                        Text(if (step > 0) "+$step" else "$step")
+                                    }
+                                }
+                                TextButton(onClick = { engine.changeSubtitleDelay(0) }, enabled = engine.subtitleDelayMs != 0L) { Text("Reset") }
+                            }
                         }
                         val otherSources = state.links.filter { it !== state.selectedLink && it.url != state.selectedLink?.url }
                         if (engine.audioTracks.size > 2 || otherSources.isNotEmpty() || engine.audioDelayMs != 0L) {

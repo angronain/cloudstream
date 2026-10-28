@@ -146,6 +146,27 @@ fun SettingsScreen() {
             }
         }
 
+        Section("Subtitles") {
+            Text("Text size", style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(75, 100, 125, 150, 200).forEach { scale ->
+                    FilterChip(settings.subtitleScale == scale, { AppData.updateSettings { it.copy(subtitleScale = scale) } },
+                        label = { Text("$scale%") })
+                }
+            }
+            SwitchRow("Dark background", "A box behind the text, easier to read on bright scenes", settings.subtitleBackground) { value ->
+                AppData.updateSettings { it.copy(subtitleBackground = value) }
+            }
+            // VLC reads these once, when the player first opens
+            if (Vlc.isStarted) {
+                Text(
+                    "Changes apply after restarting CloudStream.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         Section("Downloads") {
             OutlinedTextField(
                 value = settings.downloadDirectory,

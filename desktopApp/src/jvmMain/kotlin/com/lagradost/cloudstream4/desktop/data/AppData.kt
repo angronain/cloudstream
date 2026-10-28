@@ -121,6 +121,10 @@ data class Settings(
     val checkForUpdates: Boolean = true,
     /** Download updates in the background and install them on restart or quit */
     val autoUpdate: Boolean = true,
+    /** Subtitle text size in percent */
+    val subtitleScale: Int = 100,
+    /** A dark box behind subtitles, easier to read on bright scenes */
+    val subtitleBackground: Boolean = false,
     /** Checks the shows in the history for new episodes once a day */
     val newEpisodeChecks: Boolean = true,
 )

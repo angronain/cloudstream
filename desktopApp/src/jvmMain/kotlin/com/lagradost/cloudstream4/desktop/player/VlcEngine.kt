@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeImageBitmap
 import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppLog
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
@@ -54,7 +55,12 @@ object Vlc {
         try {
             if (isInstalled) {
                 AppLog.log("VLC: starting")
-                MediaPlayerFactory("--no-video-title-show", "--network-caching=3000", "--no-metadata-network-access").also { factory ->
+                val settings = AppData.settings.value
+                val subtitleOptions = buildList {
+                    add("--sub-text-scale=${settings.subtitleScale.coerceIn(10, 500)}")
+                    if (settings.subtitleBackground) addAll(listOf("--freetype-background-opacity=160", "--freetype-background-color=0"))
+                }
+                MediaPlayerFactory("--no-video-title-show", "--network-caching=3000", "--no-metadata-network-access", *subtitleOptions.toTypedArray()).also { factory ->
                     AppLog.log("VLC: started, version ${factory.application().version()}")
                     // VLC's own warnings and errors end up in the log next to the app's
                     nativeLog = factory.application().newLog().apply {
@@ -125,6 +131,9 @@ class VlcEngine(factory: MediaPlayerFactory) {
         private set
     /** Positive plays the audio later, used to line up audio taken from another source */
     var audioDelayMs by mutableStateOf(0L)
+        private set
+    /** Positive shows subtitles later */
+    var subtitleDelayMs by mutableStateOf(0L)
         private set
     var hasFinished by mutableStateOf(false)
         private set
@@ -328,6 +337,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
         timeMs = startMs
         lengthMs = 0
         audioDelayMs = 0
+        subtitleDelayMs = 0
         videoAspect = null
         aspectFromTrack = false
         audioTracks = emptyList()
@@ -392,6 +402,11 @@ class VlcEngine(factory: MediaPlayerFactory) {
     fun changeAudioDelay(ms: Long) {
         audioDelayMs = ms
         vlc { player.audio().setDelay(ms * 1000) }
+    }
+
+    fun changeSubtitleDelay(ms: Long) {
+        subtitleDelayMs = ms
+        vlc { player.subpictures().setDelay(ms * 1000) }
     }
 
     fun selectSubtitle(id: Int) {
