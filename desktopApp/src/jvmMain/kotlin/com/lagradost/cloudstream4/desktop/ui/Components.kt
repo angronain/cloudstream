@@ -203,12 +203,13 @@ fun SearchResponseCard(item: SearchResponse, horizontal: Boolean = false, width:
 }
 
 @Composable
-fun MediaEntryCard(entry: MediaEntry, subtitle: String? = null, progress: Float? = null) {
+fun MediaEntryCard(entry: MediaEntry, subtitle: String? = null, progress: Float? = null, horizontal: Boolean = false) {
     val navigator = LocalNavigator.current
     PosterCard(
         title = entry.name,
         posterUrl = entry.posterUrl,
         headers = entry.posterHeaders,
+        horizontal = horizontal,
         subtitle = subtitle ?: entry.apiName,
         progress = progress,
         menu = { mediaMenu(entry, navigator) },

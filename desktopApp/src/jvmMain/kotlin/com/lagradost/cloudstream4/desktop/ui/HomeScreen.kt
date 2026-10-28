@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream4.desktop.ui
 
 import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,7 +36,14 @@ import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageData
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.mvvm.logError
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.lagradost.cloudstream3.mapper
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.AppDirs
+import com.lagradost.cloudstream4.desktop.data.MediaEntry
+import com.lagradost.cloudstream4.desktop.data.toMediaEntry
+import kotlinx.coroutines.withContext
+import java.io.File
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.arrow_down
 import com.lagradost.cloudstream4.desktop.generated.resources.refresh
@@ -56,9 +64,14 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import org.jetbrains.compose.resources.painterResource
 
+/** A home row saved to disk, shown while the provider loads the current one */
+data class CachedRow(val name: String, val items: List<MediaEntry>, val horizontal: Boolean = false)
+
 data class HomeState(
     val provider: String? = null,
     val rows: List<HomePageList> = emptyList(),
+    /** The rows of the last load, until the new ones are in */
+    val cached: List<CachedRow> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
 )
@@ -93,11 +106,26 @@ class HomeViewModel(private val scope: CoroutineScope) {
         }
     }
 
+    private fun cacheFile(provider: String) =
+        File(AppDirs.cacheDir, "home/${provider.replace(Regex("[^A-Za-z0-9._-]"), "_")}.json")
+
+    private fun readCache(provider: String): List<CachedRow> = runCatching {
+        cacheFile(provider).takeIf { it.exists() }?.let { mapper.readValue<List<CachedRow>>(it) }
+    }.onFailure { logError(it) }.getOrNull().orEmpty()
+
+    private fun writeCache(provider: String, rows: List<HomePageList>) = runCatching {
+        val file = cacheFile(provider)
+        file.parentFile.mkdirs()
+        mapper.writeValue(file, rows.map { row -> CachedRow(row.name, row.list.map { it.toMediaEntry() }, row.isHorizontalImages) })
+    }.onFailure { logError(it) }
+
     fun load() {
         val api = currentApi() ?: return
         job?.cancel()
         _state.value = HomeState(provider = api.name, isLoading = true)
         job = scope.launch {
+            val cached = withContext(Dispatchers.IO) { readCache(api.name) }
+            _state.update { if (it.rows.isEmpty()) it.copy(cached = cached) else it }
             val lock = Mutex()
             val errors = mutableListOf<Throwable>()
             suspend fun fetch(data: MainPageData) {
@@ -123,10 +151,12 @@ class HomeViewModel(private val scope: CoroutineScope) {
                 api.mainPage.map { launch(Dispatchers.IO) { fetch(it) } }.forEach { it.join() }
             }
 
+            if (_state.value.rows.isNotEmpty()) withContext(Dispatchers.IO) { writeCache(api.name, _state.value.rows) }
             _state.update {
                 it.copy(
                     isLoading = false,
-                    error = if (it.rows.isEmpty()) errors.firstOrNull()?.let { e -> e.message ?: e.javaClass.simpleName }
+                    cached = if (it.rows.isEmpty()) it.cached else emptyList(),
+                    error = if (it.rows.isEmpty() && it.cached.isEmpty()) errors.firstOrNull()?.let { e -> e.message ?: e.javaClass.simpleName }
                         ?: "Nothing found" else null
                 )
             }
@@ -235,8 +265,20 @@ fun HomeScreen(viewModel: HomeViewModel) {
                 }
             }
 
-            items(state.rows, key = { it.name + it.list.firstOrNull()?.url }) { row ->
-                SearchResponseRow(row.name, row.list, row.isHorizontalImages)
+            // The saved rows stand in until the provider has returned as many
+            if (state.rows.size < state.cached.size) {
+                items(state.cached, key = { "cached" + it.name + it.items.firstOrNull()?.url }) { row ->
+                    SectionTitle(row.name)
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(row.items, key = { it.url + it.apiName }) {
+                            MediaEntryCard(it, subtitle = it.type?.name ?: "", horizontal = row.horizontal)
+                        }
+                    }
+                }
+            } else {
+                items(state.rows, key = { it.name + it.list.firstOrNull()?.url }) { row ->
+                    SearchResponseRow(row.name, row.list, row.isHorizontalImages)
+                }
             }
 
             if (state.error != null) {
