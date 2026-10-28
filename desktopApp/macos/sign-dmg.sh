@@ -18,6 +18,12 @@ hdiutil detach "$WORK/mnt" -quiet
 rm -rf "$WORK/contents/.fseventsd" "$WORK/contents/.Trashes"
 
 sh "$HERE/sign.sh" "$WORK/contents/CloudStream.app" "$ENTITLEMENTS"
-hdiutil create -quiet -volname "${VOLUME:-CloudStream}" -srcfolder "$WORK/contents" -format UDZO -imagekey zlib-level=9 -ov "$WORK/signed.dmg"
+# hdiutil sometimes fails with "Resource busy" on build machines, a moment later it works
+for attempt in 1 2 3 4; do
+  if hdiutil create -quiet -volname "${VOLUME:-CloudStream}" -srcfolder "$WORK/contents" -format UDZO -imagekey zlib-level=9 -ov "$WORK/signed.dmg"; then break; fi
+  if [ "$attempt" = 4 ]; then echo "hdiutil create failed" >&2; exit 1; fi
+  echo "hdiutil create failed, trying again" >&2
+  sleep 10
+done
 mv -f "$WORK/signed.dmg" "$DMG"
 echo "Signed $DMG"
