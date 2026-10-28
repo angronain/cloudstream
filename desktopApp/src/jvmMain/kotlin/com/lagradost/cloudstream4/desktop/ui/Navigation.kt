@@ -23,6 +23,8 @@ data class Playable(
     val season: Int? = null,
     val episode: Int? = null,
     val posterUrl: String? = null,
+    /** MyAnimeList id of the anime, used to find its intro and credits */
+    val malId: Int? = null,
 )
 
 sealed interface Route {

@@ -51,6 +51,7 @@ import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.EpisodeResponse
 import com.lagradost.cloudstream3.LiveStreamLoadResponse
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.getMalId
 import com.lagradost.cloudstream3.MovieLoadResponse
 import com.lagradost.cloudstream3.TorrentLoadResponse
 import com.lagradost.cloudstream3.TvSeriesLoadResponse
@@ -127,8 +128,11 @@ private suspend fun load(media: MediaEntry): ResultState {
     }
 }
 
-private fun LoadResponse.playlist(episodes: List<Episode>): List<Playable> = episodes.mapIndexed { i, episode ->
-    Playable(episode.data, "$name · ${episode.label(i)}", episode.season, episode.episode, episode.posterUrl)
+private fun LoadResponse.playlist(episodes: List<Episode>): List<Playable> {
+    val malId = if (this is AnimeLoadResponse) getMalId()?.toIntOrNull() else null
+    return episodes.mapIndexed { i, episode ->
+        Playable(episode.data, "$name · ${episode.label(i)}", episode.season, episode.episode, episode.posterUrl, malId)
+    }
 }
 
 /** Episodes this far in count as watched, the next one is played instead */

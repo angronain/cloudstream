@@ -262,6 +262,15 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         }
     }
 
+    // Intro and credits of anime episodes, once the length is known since AniSkip matches times to it
+    var skipStamps by remember(route) { mutableStateOf(emptyList<SkipStamp>()) }
+    val knowsLength = engine.lengthMs > 0
+    LaunchedEffect(route, knowsLength) {
+        val malId = playable.malId ?: return@LaunchedEffect
+        val episode = playable.episode ?: return@LaunchedEffect
+        if (knowsLength) skipStamps = withContext(Dispatchers.IO) { AniSkip.stamps(malId, episode, engine.lengthMs) }
+    }
+
     // Cancelling the next episode card keeps the player on this episode when it ends
     var nextCancelled by remember(route) { mutableStateOf(false) }
     LaunchedEffect(engine.hasFinished) {
@@ -509,7 +518,19 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         }
 
         val remainingMs = engine.lengthMs - engine.timeMs
-        if (hasNext && !nextCancelled && engine.lengthMs > NEXT_UP_MS * 4 && remainingMs in 1..NEXT_UP_MS) {
+        val showNextUp = hasNext && !nextCancelled && engine.lengthMs > NEXT_UP_MS * 4 && remainingMs in 1..NEXT_UP_MS
+        skipStamps.firstOrNull { engine.timeMs in it.startMs until it.endMs - 1_000 }?.let { stamp ->
+            Button(
+                onClick = {
+                    focus.requestFocus()
+                    engine.seekTo(stamp.endMs)
+                },
+                // Above the next episode card when both show
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = if (showNextUp) 260.dp else 120.dp),
+            ) { Text(stamp.label) }
+        }
+
+        if (showNextUp) {
             Surface(
                 Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 120.dp).widthIn(max = 320.dp),
                 shape = RoundedCornerShape(12.dp),
