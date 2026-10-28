@@ -405,6 +405,11 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             }
             .pointerHoverIcon(if (controlsVisible) PointerIcon.Default else hiddenCursor)
             .onKeyEvent { event ->
+                // "?" sits on different keys depending on the keyboard layout, the typed character says it was pressed
+                if (event.type == KeyEventType.Unknown && event.utf16CodePoint == '?'.code) {
+                    showShortcuts = !showShortcuts
+                    return@onKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 lastInteraction = System.currentTimeMillis()
                 when (event.key) {
@@ -422,7 +427,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         isFullscreen -> toggleFullscreen()
                         else -> navigator.back()
                     }
-                    else -> if (event.utf16CodePoint == '?'.code) showShortcuts = !showShortcuts else return@onKeyEvent false
+                    else -> return@onKeyEvent false
                 }
                 true
             }
@@ -514,7 +519,12 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                     Text("Next episode in ${(remainingMs + 999) / 1000}s", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
                     Text(route.playlist[route.index + 1].title, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { saveProgress(); playNext() }) { Text("Play now") }
+                        Button(onClick = {
+                            // The button goes away, the keyboard shortcuts need the player focused again
+                            focus.requestFocus()
+                            saveProgress()
+                            playNext()
+                        }) { Text("Play now") }
                         TextButton(onClick = { nextCancelled = true; focus.requestFocus() }) { Text("Cancel", color = Color.White) }
                     }
                 }
