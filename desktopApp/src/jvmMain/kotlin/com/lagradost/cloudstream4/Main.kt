@@ -1,6 +1,13 @@
 package com.lagradost.cloudstream4
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isBackPressed
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,6 +47,7 @@ import okio.Path.Companion.toOkioPath
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 
+@OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     // First, so everything after it is in the log file
     AppLog.install()
@@ -88,7 +96,12 @@ fun main() {
             LaunchedEffect(Unit) { window.minimumSize = java.awt.Dimension(800, 560) }
             CloudStreamTheme(mode = settings.theme, primaryColor = settings.primaryColor) {
                 CompositionLocalProvider(LocalFocusOutlineDefault provides false, LocalWindowState provides windowState, LocalMainWindow provides window) {
-                    App(navigator)
+                    // The mouse's side back button goes back, like in a browser
+                    Box(Modifier.fillMaxSize().onPointerEvent(PointerEventType.Press) { event ->
+                        if (event.buttons.isBackPressed) navigator.back()
+                    }) {
+                        App(navigator)
+                    }
                 }
             }
         }

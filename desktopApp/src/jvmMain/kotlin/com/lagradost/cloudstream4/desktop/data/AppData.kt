@@ -121,6 +121,9 @@ data class Settings(
     val checkForUpdates: Boolean = true,
     /** Download updates in the background and install them on restart or quit */
     val autoUpdate: Boolean = true,
+    /** Player volume and speed, kept between episodes and launches */
+    val playerVolume: Int = 100,
+    val playerRate: Float = 1f,
     /** Subtitle text size in percent */
     val subtitleScale: Int = 100,
     /** A dark box behind subtitles, easier to read on bright scenes */

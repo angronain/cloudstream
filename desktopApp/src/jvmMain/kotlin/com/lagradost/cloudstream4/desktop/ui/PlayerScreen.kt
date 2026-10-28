@@ -68,6 +68,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.utf16CodePoint
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -344,6 +345,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     }
 
     val seekMs = settings.seekSeconds * 1000L
+    var showShortcuts by remember { mutableStateOf(false) }
 
     // Two-finger swipes: horizontal seeks, vertical changes the volume. One direction is kept per swipe.
     val swipe = remember { SwipeGesture() }
@@ -415,8 +417,12 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                     Key.F -> toggleFullscreen()
                     Key.N -> if (hasNext) playNext()
                     Key.P -> enterPip()
-                    Key.Escape -> if (isFullscreen) toggleFullscreen() else navigator.back()
-                    else -> return@onKeyEvent false
+                    Key.Escape -> when {
+                        showShortcuts -> showShortcuts = false
+                        isFullscreen -> toggleFullscreen()
+                        else -> navigator.back()
+                    }
+                    else -> if (event.utf16CodePoint == '?'.code) showShortcuts = !showShortcuts else return@onKeyEvent false
                 }
                 true
             }
@@ -437,6 +443,34 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 contentAlignment = Alignment.Center,
             ) {
                 VideoFrame(frame, engine.videoAspect)
+            }
+        }
+
+        if (showShortcuts) {
+            Surface(
+                Modifier.align(Alignment.Center).clickable { showShortcuts = false },
+                shape = RoundedCornerShape(12.dp),
+                color = Color.Black.copy(alpha = 0.85f),
+            ) {
+                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Keyboard shortcuts", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                    listOf(
+                        "Space or K" to "Play / pause",
+                        "← or J, → or L" to "Back / forward ${settings.seekSeconds}s",
+                        "↑ ↓" to "Volume",
+                        "M" to "Mute",
+                        "F or double click" to "Fullscreen",
+                        "N" to "Next episode",
+                        "P" to "Picture in picture",
+                        "Esc" to "Leave fullscreen, then the player",
+                        "?" to "Show or hide this list",
+                    ).forEach { (keys, action) ->
+                        Row {
+                            Text(keys, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.width(160.dp))
+                            Text(action, color = Color.White.copy(alpha = 0.8f))
+                        }
+                    }
+                }
             }
         }
 

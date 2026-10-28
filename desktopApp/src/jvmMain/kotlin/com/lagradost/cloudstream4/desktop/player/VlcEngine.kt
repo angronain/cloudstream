@@ -109,9 +109,9 @@ class VlcEngine(factory: MediaPlayerFactory) {
         private set
     var lengthMs by mutableStateOf(0L)
         private set
-    var volume by mutableStateOf(100)
+    var volume by mutableStateOf(AppData.settings.value.playerVolume)
         private set
-    var rate by mutableStateOf(1f)
+    var rate by mutableStateOf(AppData.settings.value.playerRate)
         private set
     var audioTracks by mutableStateOf(emptyList<Track>())
         private set
@@ -346,9 +346,11 @@ class VlcEngine(factory: MediaPlayerFactory) {
             if (startMs > 0) add(":start-time=${startMs / 1000.0}")
         }.toTypedArray()
         val volume = volume
+        val rate = rate
         vlc {
             player.media().play(url, *options)
             player.audio().setVolume(volume)
+            if (rate != 1f) player.controls().setRate(rate)
         }
     }
 
@@ -378,11 +380,14 @@ class VlcEngine(factory: MediaPlayerFactory) {
         volume = value.coerceIn(0, 200)
         val volume = volume
         vlc { player.audio().setVolume(volume) }
+        // Muting is for now, the next launch starts with sound
+        if (volume > 0) AppData.updateSettings { it.copy(playerVolume = volume) }
     }
 
     fun changeRate(value: Float) {
         rate = value
         vlc { player.controls().setRate(value) }
+        AppData.updateSettings { it.copy(playerRate = value) }
     }
 
     fun selectAudio(id: Int) {
