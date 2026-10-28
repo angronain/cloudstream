@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.CommonActivity
+import com.lagradost.cloudstream4.desktop.player.MacArch
 import com.lagradost.cloudstream4.desktop.generated.resources.Res
 import com.lagradost.cloudstream4.desktop.generated.resources.download
 import com.lagradost.cloudstream4.desktop.generated.resources.extension
@@ -76,15 +77,16 @@ fun App(navigator: Navigator) {
         loadingPlugins = false
         val failed = PluginManager.errors.value.size
         if (failed > 0) notify("$failed extensions failed to load, see the Extensions tab")
-        if (AppData.settings.value.checkForUpdates) Updater.check()
+        // Also with update checks off, since the Intel build on Apple Silicon only gets the right build through them
+        if (AppData.settings.value.checkForUpdates || MacArch.isTranslated) Updater.check()
     }
 
     // Offer the update once it is downloaded (or found, when automatic updates are off)
     LaunchedEffect(Unit) {
         Updater.state.collect { update ->
             val (message, action, onAction) = when (update) {
-                is UpdateState.Ready -> Triple("CloudStream ${update.update.version} is ready to install", "Restart", Updater::installAndRestart)
-                is UpdateState.Available -> Triple("CloudStream ${update.update.version} is available", "Download") {
+                is UpdateState.Ready -> Triple("CloudStream ${update.update.label} is ready to install", "Restart", Updater::installAndRestart)
+                is UpdateState.Available -> Triple("CloudStream ${update.update.label} is available", "Download") {
                     if (Updater.canInstall) Updater.download(update.update) else openInBrowser(update.update.asset.downloadUrl)
                 }
                 else -> return@collect

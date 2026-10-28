@@ -190,10 +190,10 @@ fun SettingsScreen() {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 when (val current = update) {
-                    is UpdateState.Ready -> TextButton(onClick = Updater::installAndRestart) { Text("Restart and update to ${current.update.version}") }
+                    is UpdateState.Ready -> TextButton(onClick = Updater::installAndRestart) { Text("Restart and update to ${current.update.label}") }
                     is UpdateState.Available -> TextButton(onClick = {
                         if (Updater.canInstall) Updater.download(current.update) else openInBrowser(current.update.asset.downloadUrl)
-                    }) { Text("Download ${current.update.version}") }
+                    }) { Text("Download ${current.update.label}") }
 
                     is UpdateState.Downloading, UpdateState.Checking -> Unit
                     else -> TextButton(onClick = { Updater.check(userInitiated = true) }) { Text("Check for updates") }
@@ -203,9 +203,9 @@ fun SettingsScreen() {
                         UpdateState.Idle -> ""
                         UpdateState.Checking -> "Checking..."
                         UpdateState.UpToDate -> "You have the latest version"
-                        is UpdateState.Available -> "Version ${current.update.version} is available"
-                        is UpdateState.Downloading -> "Downloading ${current.update.version}: ${(current.progress * 100).toInt()}%"
-                        is UpdateState.Ready -> "Version ${current.update.version} will be installed when you quit"
+                        is UpdateState.Available -> "Version ${current.update.label} is available"
+                        is UpdateState.Downloading -> "Downloading ${current.update.label}: ${(current.progress * 100).toInt()}%"
+                        is UpdateState.Ready -> "Version ${current.update.label} will be installed when you quit"
                         is UpdateState.Failed -> current.message
                     },
                     style = MaterialTheme.typography.bodySmall,

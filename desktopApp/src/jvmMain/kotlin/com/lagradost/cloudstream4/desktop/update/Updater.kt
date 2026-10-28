@@ -40,7 +40,10 @@ data class GithubRelease(
     val assets: List<GithubAsset> = emptyList(),
 )
 
-data class Update(val version: String, val notes: String?, val asset: GithubAsset)
+data class Update(val version: String, val notes: String?, val asset: GithubAsset) {
+    /** Shown to the user, an Intel build on Apple Silicon is offered the Apple Silicon one even at the same version */
+    val label: String get() = if (MacArch.isTranslated) "$version for Apple Silicon" else version
+}
 
 sealed interface UpdateState {
     data object Idle : UpdateState
@@ -108,7 +111,8 @@ object Updater {
                 pickAsset(release.assets)?.let { Update(release.tagName.removePrefix(TAG_PREFIX), release.body, it) }
             }
             .maxWithOrNull { a, b -> compareVersions(a.version, b.version) }
-            ?.takeIf { compareVersions(it.version, currentVersion) > 0 }
+            // The Intel build on Apple Silicon cannot use VLC, so it is replaced right away rather than at the next release
+            ?.takeIf { compareVersions(it.version, currentVersion) > 0 || MacArch.isTranslated && compareVersions(it.version, currentVersion) == 0 }
     }
 
     /** Checks for an update and, if automatic updates are on, downloads it in the background */
