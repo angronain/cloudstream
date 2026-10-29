@@ -175,6 +175,8 @@ data class Settings(
     val newEpisodeChecks: Boolean = true,
     /** A home row of titles like the ones the user rated, liked or watched, found on TMDB */
     val recommendations: Boolean = true,
+    /** The extension recommendations open on, null is the Home source */
+    val recommendationProvider: String? = null,
     /** A folder shared between computers (iCloud Drive, Dropbox...) to sync the library through, empty is off */
     val syncFolder: String = "",
     /** Shows what is playing on the Discord profile */

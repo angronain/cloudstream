@@ -2,23 +2,30 @@ package com.lagradost.cloudstream4.desktop.ui
 
 import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -112,20 +119,10 @@ fun App(navigator: Navigator) {
             containerColor = MaterialTheme.colorScheme.background,
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {
-            if (route !is Route.Player) Row(Modifier.fillMaxSize()) {
-                NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
-                    Tab.entries.forEach { tab ->
-                        NavigationRailItem(
-                            selected = navigator.tab == tab && route == null,
-                            onClick = { navigator.select(tab) },
-                            icon = { Icon(painterResource(tab.icon), tab.title) },
-                            label = { Text(tab.title) },
-                            modifier = Modifier.padding(vertical = 4.dp),
-                        )
-                    }
-                }
-                VerticalDivider()
-                Box(Modifier.weight(1f).fillMaxHeight()) {
+            if (route !is Route.Player) Box(Modifier.fillMaxSize()) {
+                // Home's spotlight runs under the navigation bar, the other screens start below it
+                val overHome = route == null && navigator.tab == Tab.Home
+                Box(Modifier.fillMaxSize().padding(top = if (overHome) 0.dp else TopBarHeight)) {
                     when (route) {
                         is Route.Result -> stateHolder.SaveableStateProvider(route.toString()) { ResultScreen(route.media) }
                         null -> stateHolder.SaveableStateProvider(navigator.tab.name) {
@@ -141,15 +138,61 @@ fun App(navigator: Navigator) {
 
                         is Route.Player -> Unit
                     }
-                    if (loadingPlugins) {
-                        LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
-                    }
+                }
+                TopBar(navigator, overHome && !navigator.homeScrolled)
+                if (loadingPlugins) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
                 }
             }
             // The player takes over the whole window, or plays in its own window in picture-in-picture.
             // It stays at this one call site so moving between the two keeps the same playback going.
             val playing = route as? Route.Player ?: navigator.pip
             if (playing != null) PlayerScreen(playing, inPip = route !is Route.Player)
+        }
+    }
+}
+
+private val TopBarHeight = 64.dp
+
+/** The tabs across the top of the window, see-through over Home's spotlight */
+@Composable
+private fun TopBar(navigator: Navigator, overHome: Boolean) {
+    val content = if (overHome) Color.White else MaterialTheme.colorScheme.onBackground
+    Row(
+        Modifier.fillMaxWidth().height(TopBarHeight)
+            .background(
+                if (overHome) Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.55f), Color.Transparent))
+                else SolidColor(MaterialTheme.colorScheme.background)
+            )
+            .padding(horizontal = 28.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            "CloudStream",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = if (overHome) Color.White else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(end = 24.dp).clip(RoundedCornerShape(6.dp)).clickable { navigator.select(Tab.Home) },
+        )
+        Tab.entries.forEach { tab ->
+            val selected = navigator.tab == tab
+            Row(
+                Modifier.clip(RoundedCornerShape(50))
+                    .background(if (selected) content.copy(alpha = 0.14f) else Color.Transparent)
+                    .clickable { navigator.select(tab) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(painterResource(tab.icon), null, tint = content.copy(alpha = if (selected) 1f else 0.7f), modifier = Modifier.size(18.dp))
+                Text(
+                    tab.title,
+                    color = content.copy(alpha = if (selected) 1f else 0.7f),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
         }
     }
 }

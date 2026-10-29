@@ -4,6 +4,8 @@ import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,24 +15,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.MainAPI
@@ -182,7 +189,24 @@ fun HomeScreen(viewModel: HomeViewModel) {
     LaunchedEffect(providersVersion) { viewModel.ensureLoaded() }
     val providers = remember(providersVersion) { PluginManager.providers().filter { it.hasMainPage } }
 
-    if (providers.isEmpty()) {
+    val withNew = if (newEpisodesOn) history.filter { (episodeChecks[it.media.url]?.newCount ?: 0) > 0 } else emptyList()
+    // Finished movies are done, finished episodes still lead to the next one. Shows with new episodes are listed above
+    val watching = history.filter {
+        (it.episodeName != null || it.episodeData?.let { data -> positions[data]?.isFinished } != true) && it !in withNew
+    }
+    val suggested = if (recommendationsOn) recommendations.filter { it.title.key !in dismissed } else emptyList()
+
+    // The spotlight: new episodes first, then what is being watched, then recommendations, or the Home source on a fresh install
+    val spotlight = remember(withNew, watching, suggested, state.rows.isEmpty(), episodeChecks) {
+        val items = withNew.take(3).map { spotlightFromProgress(it, episodeChecks[it.media.url]?.newCount ?: 0) } +
+            watching.take(4).map { spotlightFromProgress(it, 0) } +
+            suggested.take(6).map { spotlightFromRecommendation(it) }
+        items.ifEmpty {
+            state.rows.firstOrNull()?.let { row -> row.list.take(8).map { spotlightFromSearch(it, row.name) } }.orEmpty()
+        }.distinctBy { it.key }.take(12)
+    }
+
+    if (providers.isEmpty() && spotlight.isEmpty()) {
         val anyProviders = remember(providersVersion) { PluginManager.providers().isNotEmpty() }
         MessageBox(
             tr("No extensions with a home page installed"),
@@ -193,39 +217,19 @@ fun HomeScreen(viewModel: HomeViewModel) {
         return
     }
 
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize()) {
-            item {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    var expanded by remember { mutableStateOf(false) }
-                    Box {
-                        OutlinedButton(onClick = { expanded = true }) {
-                            Text(state.provider ?: tr("Select provider"))
-                            Spacer(Modifier.width(4.dp))
-                            Icon(painterResource(Res.drawable.arrow_down), null)
-                        }
-                        DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                            providers.sortedBy { it.name.lowercase() }.forEach { api ->
-                                DropdownMenuItem(
-                                    text = { Text("${api.name}  ·  ${api.lang}") },
-                                    onClick = {
-                                        expanded = false
-                                        viewModel.select(api.name)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = viewModel::load) { Icon(painterResource(Res.drawable.refresh), tr("Reload")) }
-                }
-                if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val spotlightHeight = (maxHeight * 0.86f).coerceIn(480.dp, 900.dp)
+        val listState = rememberLazyListState()
+        val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40 } }
+        LaunchedEffect(scrolled) { navigator.homeScrolled = scrolled }
+        LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
+            if (spotlight.isNotEmpty()) {
+                item(key = "spotlight") { Spotlight(spotlight, spotlightHeight) }
+            } else {
+                // Leaves room for the navigation bar over the top of Home
+                item { Spacer(Modifier.height(72.dp)) }
             }
 
-            val withNew = if (newEpisodesOn) history.filter { (episodeChecks[it.media.url]?.newCount ?: 0) > 0 } else emptyList()
             if (withNew.isNotEmpty()) {
                 item {
                     SectionTitle(tr("New episodes"))
@@ -243,10 +247,6 @@ fun HomeScreen(viewModel: HomeViewModel) {
                 }
             }
 
-            // Finished movies are done, finished episodes still lead to the next one. Shows with new episodes are listed above
-            val watching = history.filter {
-                (it.episodeName != null || it.episodeData?.let { data -> positions[data]?.isFinished } != true) && it !in withNew
-            }
             if (watching.isNotEmpty()) {
                 item {
                     SectionTitle(tr("Continue watching"))
@@ -258,9 +258,18 @@ fun HomeScreen(viewModel: HomeViewModel) {
                 }
             }
 
+            if (suggested.isNotEmpty()) {
+                item {
+                    SectionTitle(tr("Recommended for you"))
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                        items(suggested, key = { it.title.key }) { RecommendationCard(it) }
+                    }
+                }
+            }
+
             if (bookmarks.isNotEmpty()) {
                 item {
-                    SectionTitle(tr("Bookmarks")) {
+                    SectionTitle(tr("My list")) {
                         TextButton(onClick = { navigator.select(Tab.Library) }) { Text(tr("See all")) }
                     }
                     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
@@ -269,13 +278,37 @@ fun HomeScreen(viewModel: HomeViewModel) {
                 }
             }
 
-            val suggested = if (recommendationsOn) recommendations.filter { it.title.key !in dismissed } else emptyList()
-            if (suggested.isNotEmpty()) {
+            if (providers.isNotEmpty()) {
                 item {
-                    SectionTitle(tr("Recommended for you"))
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
-                        items(suggested, key = { it.title.key }) { RecommendationCard(it) }
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(tr("From"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(8.dp))
+                        var expanded by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(onClick = { expanded = true }) {
+                                Text(state.provider ?: tr("Select provider"))
+                                Spacer(Modifier.width(4.dp))
+                                Icon(painterResource(Res.drawable.arrow_down), null)
+                            }
+                            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                                providers.sortedBy { it.name.lowercase() }.forEach { api ->
+                                    DropdownMenuItem(
+                                        text = { Text("${api.name}  ·  ${api.lang}") },
+                                        onClick = {
+                                            expanded = false
+                                            viewModel.select(api.name)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = viewModel::load) { Icon(painterResource(Res.drawable.refresh), tr("Reload")) }
                     }
+                    if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 }
             }
 
@@ -309,21 +342,33 @@ fun HomeScreen(viewModel: HomeViewModel) {
     }
 }
 
-/** A TMDB title, opening it searches the extensions for it */
+/** A TMDB title, opening it goes to its page on the default source, or searches for it */
 @Composable
 private fun RecommendationCard(item: Recommendation) {
     val navigator = LocalNavigator.current
+    val scope = rememberCoroutineScope()
+    var opening by remember { mutableStateOf(false) }
+    fun open() {
+        if (opening) return
+        opening = true
+        scope.launch {
+            openOnDefaultSource(item.title.name, item.title.year, navigator)
+            opening = false
+        }
+    }
     PosterCard(
         title = item.title.name,
         posterUrl = item.title.posterUrl,
         headers = null,
         subtitle = item.because.takeIf { it.isNotEmpty() }?.let { tr("Because of {0}", it) } ?: item.title.year?.toString(),
+        isPreparing = opening,
         menu = {
             listOf(
-                ContextMenuItem(tr("Search")) { navigator.searchFor(item.title.name) },
+                ContextMenuItem(tr("Open")) { open() },
+                ContextMenuItem(tr("Search all extensions")) { navigator.searchFor(item.title.name) },
                 ContextMenuItem(tr("Not interested")) { Recommendations.dismiss(item) },
             )
         },
-        onClick = { navigator.searchFor(item.title.name) },
+        onClick = ::open,
     )
 }

@@ -49,6 +49,9 @@ class Navigator {
         stack.clear()
     }
 
+    /** Home is scrolled past its top, the navigation bar is then solid instead of see-through */
+    var homeScrolled by mutableStateOf(false)
+
     /** A search the Search tab runs when it opens, set by [searchFor] */
     var pendingSearch by mutableStateOf<String?>(null)
 

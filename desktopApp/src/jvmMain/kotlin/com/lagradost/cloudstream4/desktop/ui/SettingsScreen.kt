@@ -25,6 +25,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import com.lagradost.cloudstream4.desktop.plugins.PluginManager
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -227,6 +231,36 @@ fun SettingsScreen() {
             ) { value ->
                 AppData.updateSettings { it.copy(recommendations = value) }
                 if (value) Recommendations.refreshIfDue()
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("Open recommendations on"))
+                    Text(
+                        tr("Recommendations open straight on this source's page when it has the title, otherwise all extensions are searched"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val providersVersion by PluginManager.providersVersion.collectAsState()
+                val sources = remember(providersVersion) { PluginManager.providers().map { it.name }.distinct().sortedBy { it.lowercase() } }
+                var expanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { expanded = true }) {
+                        Text(settings.recommendationProvider ?: tr("Same as Home"))
+                    }
+                    DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text(tr("Same as Home")) }, onClick = {
+                            expanded = false
+                            AppData.updateSettings { it.copy(recommendationProvider = null) }
+                        })
+                        sources.forEach { name ->
+                            DropdownMenuItem(text = { Text(name) }, onClick = {
+                                expanded = false
+                                AppData.updateSettings { it.copy(recommendationProvider = name) }
+                            })
+                        }
+                    }
+                }
             }
             Text(
                 tr("Import your Letterboxd ratings so the recommendations know your taste. In Letterboxd, go to Settings, Data, Export your data, then pick the zip file here."),
