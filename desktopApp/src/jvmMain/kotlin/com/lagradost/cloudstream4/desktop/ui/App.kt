@@ -81,6 +81,7 @@ fun App(navigator: Navigator) {
         // Also with update checks off, since the Intel build on Apple Silicon only gets the right build through them
         if (AppData.settings.value.checkForUpdates || MacArch.isTranslated) Updater.check()
         NewEpisodes.checkIfDue()
+        Recommendations.refreshIfDue()
     }
 
     // Offer the update once it is downloaded (or found, when automatic updates are off)

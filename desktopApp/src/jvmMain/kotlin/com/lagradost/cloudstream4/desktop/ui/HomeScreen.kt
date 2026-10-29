@@ -175,6 +175,9 @@ fun HomeScreen(viewModel: HomeViewModel) {
     val bookmarks by AppData.bookmarks.collectAsState()
     val episodeChecks by AppData.episodeChecks.collectAsState()
     val newEpisodesOn = AppData.settings.collectAsState().value.newEpisodeChecks
+    val recommendationsOn = AppData.settings.collectAsState().value.recommendations
+    val recommendations by Recommendations.items.collectAsState()
+    val dismissed by AppData.dismissedRecommendations.collectAsState()
 
     LaunchedEffect(providersVersion) { viewModel.ensureLoaded() }
     val providers = remember(providersVersion) { PluginManager.providers().filter { it.hasMainPage } }
@@ -266,6 +269,16 @@ fun HomeScreen(viewModel: HomeViewModel) {
                 }
             }
 
+            val suggested = if (recommendationsOn) recommendations.filter { it.title.key !in dismissed } else emptyList()
+            if (suggested.isNotEmpty()) {
+                item {
+                    SectionTitle(tr("Recommended for you"))
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                        items(suggested, key = { it.title.key }) { RecommendationCard(it) }
+                    }
+                }
+            }
+
             // The saved rows stand in until the provider has returned as many
             if (state.rows.size < state.cached.size) {
                 items(state.cached, key = { "cached" + it.name + it.items.firstOrNull()?.url }) { row ->
@@ -294,4 +307,23 @@ fun HomeScreen(viewModel: HomeViewModel) {
             }
         }
     }
+}
+
+/** A TMDB title, opening it searches the extensions for it */
+@Composable
+private fun RecommendationCard(item: Recommendation) {
+    val navigator = LocalNavigator.current
+    PosterCard(
+        title = item.title.name,
+        posterUrl = item.title.posterUrl,
+        headers = null,
+        subtitle = item.because.takeIf { it.isNotEmpty() }?.let { tr("Because of {0}", it) } ?: item.title.year?.toString(),
+        menu = {
+            listOf(
+                ContextMenuItem(tr("Search")) { navigator.searchFor(item.title.name) },
+                ContextMenuItem(tr("Not interested")) { Recommendations.dismiss(item) },
+            )
+        },
+        onClick = { navigator.searchFor(item.title.name) },
+    )
 }

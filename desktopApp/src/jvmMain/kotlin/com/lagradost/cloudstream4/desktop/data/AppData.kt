@@ -116,6 +116,21 @@ data class Rating(
     val updatedAt: Long = System.currentTimeMillis(),
 )
 
+/** A rating from another service, only used to find recommendations */
+data class ImportedRating(
+    val name: String,
+    val year: Int? = null,
+    /** 0.5 to 5, null if only watched or liked */
+    val stars: Float? = null,
+    val liked: Boolean = false,
+    val source: String = "Letterboxd",
+    /** Letterboxd films are all movies, Trakt says which */
+    val movie: Boolean? = true,
+) {
+    @get:JsonIgnore
+    val key: String get() = "${name.lowercase()}|${year ?: ""}"
+}
+
 enum class PlayerKind { Internal, External }
 
 /** The lists bookmarks are sorted into, like in the Android app */
@@ -156,6 +171,8 @@ data class Settings(
     val subtitleBackground: Boolean = false,
     /** Checks the shows in the history for new episodes once a day */
     val newEpisodeChecks: Boolean = true,
+    /** A home row of titles like the ones the user rated, liked or watched, found on TMDB */
+    val recommendations: Boolean = true,
 )
 
 /** Episodes of a show at the last check, and how many appeared since the user last watched it */
@@ -326,6 +343,25 @@ object AppData {
 
     fun toggleLike(entry: MediaEntry, year: Int? = null) = updateRating(entry, year) { it.copy(liked = !it.liked) }
 
+    /** Ratings imported from Letterboxd or Trakt, by [ImportedRating.key] */
+    private val _importedRatings = MutableStateFlow(store.get("importedRatings", emptyMap<String, ImportedRating>()))
+    val importedRatings: StateFlow<Map<String, ImportedRating>> = _importedRatings.asStateFlow()
+
+    /** Adds [ratings], replacing the earlier import of the same titles */
+    fun importRatings(ratings: List<ImportedRating>) = _importedRatings.persist("importedRatings") { map ->
+        map + ratings.associateBy { it.key }
+    }
+
+    fun clearImportedRatings(source: String) = _importedRatings.persist("importedRatings") { map ->
+        map.filterValues { it.source != source }
+    }
+
+    /** TMDB ids of recommendations the user is not interested in, "movie:1" or "tv:1" */
+    private val _dismissedRecommendations = MutableStateFlow(store.get("dismissedRecommendations", emptySet<String>()))
+    val dismissedRecommendations: StateFlow<Set<String>> = _dismissedRecommendations.asStateFlow()
+
+    fun dismissRecommendation(id: String) = _dismissedRecommendations.persist("dismissedRecommendations") { it + id }
+
     /** What a backup holds: the user's library and settings, not the installed extensions, whose files are not in it */
     private val backupFlows: Map<String, MutableStateFlow<*>> by lazy {
         mapOf(
@@ -338,6 +374,8 @@ object AppData {
             "positions" to _positions,
             "audioPreferences" to _audioPreferences,
             "episodeChecks" to _episodeChecks,
+            "importedRatings" to _importedRatings,
+            "dismissedRecommendations" to _dismissedRecommendations,
         )
     }
 
@@ -377,6 +415,8 @@ object AppData {
         "positions" to object : TypeReference<LinkedHashMap<String, Position>>() {},
         "audioPreferences" to object : TypeReference<LinkedHashMap<String, String>>() {},
         "episodeChecks" to object : TypeReference<Map<String, EpisodeCheck>>() {},
+        "importedRatings" to object : TypeReference<Map<String, ImportedRating>>() {},
+        "dismissedRecommendations" to object : TypeReference<Set<String>>() {},
     )
 
     fun removeHistory(url: String) = _history.persist("history") { list -> list.filterNot { it.media.url == url } }

@@ -49,6 +49,15 @@ class Navigator {
         stack.clear()
     }
 
+    /** A search the Search tab runs when it opens, set by [searchFor] */
+    var pendingSearch by mutableStateOf<String?>(null)
+
+    /** Opens the Search tab and searches all extensions for [query] */
+    fun searchFor(query: String) {
+        pendingSearch = query
+        select(Tab.Search)
+    }
+
     /** Playback shown in the floating picture-in-picture window while the user browses */
     var pip by mutableStateOf<Route.Player?>(null)
         private set

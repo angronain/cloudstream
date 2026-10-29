@@ -117,7 +117,14 @@ class SearchViewModel(private val scope: CoroutineScope) {
 fun SearchScreen(viewModel: SearchViewModel) {
     val state by viewModel.state.collectAsState()
     val focus = remember { FocusRequester() }
+    val navigator = LocalNavigator.current
     LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(navigator.pendingSearch) {
+        val query = navigator.pendingSearch ?: return@LaunchedEffect
+        navigator.pendingSearch = null
+        viewModel.onQueryChange(query)
+        viewModel.search()
+    }
 
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(

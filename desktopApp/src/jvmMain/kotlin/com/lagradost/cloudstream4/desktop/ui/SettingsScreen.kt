@@ -44,6 +44,7 @@ import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.I18n
 import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
+import com.lagradost.cloudstream4.desktop.data.Letterboxd
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
 import com.lagradost.cloudstream4.desktop.downloads.DownloadManager
 import com.lagradost.cloudstream4.desktop.player.ExternalPlayer
@@ -207,6 +208,57 @@ fun SettingsScreen() {
                 settings.newEpisodeChecks,
             ) { value -> AppData.updateSettings { it.copy(newEpisodeChecks = value) } }
             TextButton(onClick = NewEpisodes::check, enabled = !checking) { Text(if (checking) tr("Checking…") else tr("Check now")) }
+        }
+
+        Section(tr("Recommendations")) {
+            val window = LocalMainWindow.current
+            val loading by Recommendations.loading.collectAsState()
+            val imported by AppData.importedRatings.collectAsState()
+            var message by remember { mutableStateOf<String?>(null) }
+            SwitchRow(
+                tr("Recommended for you"),
+                tr("A row on Home of titles like the ones you rated well, liked or watched, found on TMDB"),
+                settings.recommendations,
+            ) { value ->
+                AppData.updateSettings { it.copy(recommendations = value) }
+                if (value) Recommendations.refreshIfDue()
+            }
+            Text(
+                tr("Import your Letterboxd ratings so the recommendations know your taste. In Letterboxd, go to Settings, Data, Export your data, then pick the zip file here."),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val fromLetterboxd = imported.values.count { it.source == "Letterboxd" }
+            if (fromLetterboxd > 0) Text(tr("{0} films imported from Letterboxd", fromLetterboxd), style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = {
+                    val dialog = FileDialog(window, tr("Import from Letterboxd"), FileDialog.LOAD).apply { isVisible = true }
+                    val name = dialog.file ?: return@TextButton
+                    message = runCatching {
+                        val films = Letterboxd.read(File(dialog.directory, name))
+                        require(films.isNotEmpty()) { tr("No films found in this file") }
+                        AppData.importRatings(films)
+                        Recommendations.refresh()
+                        tr("{0} films imported", films.size)
+                    }.getOrElse { tr("Could not import: {0}", it.message) }
+                }) { Text(tr("Import from Letterboxd")) }
+                TextButton(onClick = {
+                    val dialog = FileDialog(window, tr("Export to Letterboxd"), FileDialog.SAVE).apply {
+                        file = "CloudStream-letterboxd-${LocalDate.now()}.csv"
+                        isVisible = true
+                    }
+                    val name = dialog.file ?: return@TextButton
+                    message = runCatching {
+                        val count = Letterboxd.write(File(dialog.directory, name))
+                        tr("{0} films saved, import the file at letterboxd.com/import", count)
+                    }.getOrElse { tr("Could not save: {0}", it.message) }
+                }) { Text(tr("Export to Letterboxd")) }
+                if (fromLetterboxd > 0) TextButton(onClick = { AppData.clearImportedRatings("Letterboxd") }) { Text(tr("Remove import")) }
+                TextButton(onClick = Recommendations::refresh, enabled = !loading) {
+                    Text(if (loading) tr("Updating…") else tr("Update recommendations"))
+                }
+            }
+            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
 
         Section(tr("Storage")) {

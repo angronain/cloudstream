@@ -1,0 +1,224 @@
+package com.lagradost.cloudstream4.desktop.ui
+
+import com.fasterxml.jackson.annotation.JsonIgnore
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
+import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.module.kotlin.readValue
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.mapper
+import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.AppDirs
+import com.lagradost.cloudstream4.desktop.data.I18n
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import java.io.File
+
+/** A movie or show on TMDB */
+data class TmdbTitle(
+    val id: Int,
+    val movie: Boolean,
+    val name: String,
+    val year: Int? = null,
+    val posterPath: String? = null,
+) {
+    @get:JsonIgnore
+    val key: String get() = (if (movie) "movie:" else "tv:") + id
+
+    @get:JsonIgnore
+    val posterUrl: String? get() = posterPath?.let { "https://image.tmdb.org/t/p/w342$it" }
+}
+
+/** A title to suggest, [because] is the title the user liked that it is most like */
+data class Recommendation(val title: TmdbTitle, val score: Double, val because: String)
+
+/** The TMDB api, with the key the Android app uses */
+object Tmdb {
+    private const val API_KEY = "e6333b32409e02a4a6eba6fb7ff866bb"
+    private const val HOST = "https://api.themoviedb.org/3"
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class Result(
+        val id: Int,
+        val title: String? = null,
+        val name: String? = null,
+        @JsonProperty("media_type") val mediaType: String? = null,
+        @JsonProperty("release_date") val releaseDate: String? = null,
+        @JsonProperty("first_air_date") val firstAirDate: String? = null,
+        @JsonProperty("poster_path") val posterPath: String? = null,
+    ) {
+        fun toTitle(movie: Boolean) = TmdbTitle(
+            id, movie, title ?: name ?: "", (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull(), posterPath,
+        )
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class Page(val results: List<Result> = emptyList())
+
+    private val language: String
+        get() = when (I18n.current) {
+            "fr" -> "fr-FR"
+            "zh" -> "zh-CN"
+            else -> "en-US"
+        }
+
+    private suspend fun page(path: String, params: Map<String, String> = emptyMap()): List<Result> {
+        val text = app.get("$HOST/$path", params = params + mapOf("api_key" to API_KEY, "language" to language)).text
+        return mapper.readValue<Page>(text).results
+    }
+
+    /** The title named [name], from [year] if known. [movie] null searches both movies and shows */
+    suspend fun find(name: String, year: Int?, movie: Boolean?): TmdbTitle? {
+        val results = when (movie) {
+            true -> page("search/movie", mapOf("query" to name) + (year?.let { mapOf("year" to "$it") } ?: emptyMap())).map { it.toTitle(true) }
+            false -> page("search/tv", mapOf("query" to name) + (year?.let { mapOf("first_air_date_year" to "$it") } ?: emptyMap())).map { it.toTitle(false) }
+            null -> page("search/multi", mapOf("query" to name))
+                .filter { it.mediaType == "movie" || it.mediaType == "tv" }
+                .map { it.toTitle(it.mediaType == "movie") }
+        }
+        // The year can be off by one between sites
+        return results.firstOrNull { year == null || it.year == null || kotlin.math.abs(it.year - year) <= 1 } ?: results.firstOrNull()
+    }
+
+    suspend fun recommendations(title: TmdbTitle): List<TmdbTitle> =
+        page((if (title.movie) "movie/" else "tv/") + "${title.id}/recommendations").map { it.toTitle(title.movie) }
+}
+
+/**
+ * Suggests titles like the ones the user rated well, liked or watched, from TMDB's recommendations.
+ * Ratings imported from Letterboxd or Trakt count too, that is what they are imported for.
+ */
+object Recommendations {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val file = File(AppDirs.cacheDir, "recommendations.json")
+    private const val MAX_AGE_MS = 3L * 24 * 60 * 60 * 1000
+    private const val MAX_SEEDS = 60
+
+    private data class Seed(val name: String, val year: Int?, val movie: Boolean?, val weight: Double)
+
+    private data class Cache(
+        val seeds: Int = 0,
+        val language: String = "",
+        val builtAt: Long = 0,
+        val items: List<Recommendation> = emptyList(),
+        /** TMDB titles found for "name|year", null if none, so each name is only searched once */
+        val found: Map<String, TmdbTitle?> = emptyMap(),
+    )
+
+    private var cache: Cache = runCatching { mapper.readValue<Cache>(file) }.getOrDefault(Cache())
+
+    private val _items = MutableStateFlow(cache.items)
+    val items: StateFlow<List<Recommendation>> = _items.asStateFlow()
+
+    private val _loading = MutableStateFlow(false)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+
+    private fun TvType?.isMovie(): Boolean? = when (this) {
+        null, TvType.Others -> null
+        TvType.Movie, TvType.AnimeMovie, TvType.Documentary, TvType.Torrent -> true
+        else -> false
+    }
+
+    /** What the user liked, the better the rating the more it counts, low ratings count against */
+    private fun seeds(): List<Seed> {
+        val seeds = LinkedHashMap<String, Seed>()
+        fun add(name: String, year: Int?, movie: Boolean?, stars: Float?, liked: Boolean, watched: Boolean) {
+            val weight = (stars?.let { it - 2.75 } ?: if (watched) 0.75 else 0.0) + if (liked) 1.0 else 0.0
+            if (weight == 0.0) return
+            val key = "${name.lowercase()}|${year ?: ""}"
+            // The app's own rating wins over an imported one
+            if (key !in seeds) seeds[key] = Seed(name, year, movie, weight)
+        }
+        AppData.ratings.value.values.sortedByDescending { it.updatedAt }.forEach {
+            add(it.media.name, it.year, it.media.type.isMovie(), it.stars, it.liked, true)
+        }
+        AppData.history.value.forEach { add(it.media.name, null, it.media.type.isMovie(), null, false, true) }
+        AppData.importedRatings.value.values.forEach { add(it.name, it.year, it.movie, it.stars, it.liked, true) }
+        // The strongest opinions first, the dislikes only matter for the titles they would bring
+        return seeds.values.sortedByDescending { kotlin.math.abs(it.weight) }.take(MAX_SEEDS)
+    }
+
+    /** Rebuilds the list if what the user rated changed, the language changed or it is a few days old */
+    fun refreshIfDue() {
+        if (!AppData.settings.value.recommendations) return
+        val seeds = seeds()
+        if (seeds.hashCode() == cache.seeds && I18n.current == cache.language &&
+            System.currentTimeMillis() - cache.builtAt < MAX_AGE_MS
+        ) return
+        refresh()
+    }
+
+    fun refresh() {
+        if (_loading.value) return
+        _loading.value = true
+        scope.launch {
+            try {
+                build()
+            } catch (t: Throwable) {
+                logError(t)
+            } finally {
+                _loading.value = false
+            }
+        }
+    }
+
+    private suspend fun build() {
+        val seeds = seeds()
+        val limit = Semaphore(4)
+        val found = cache.found.toMutableMap()
+        // TMDB returns names in the app's language, the searches stay valid
+        val resolved = scope.async {
+            seeds.map { seed ->
+                async {
+                    val key = "${seed.name.lowercase()}|${seed.year ?: ""}|${seed.movie}"
+                    val title = if (key in found) found[key] else limit.withPermit {
+                        runCatching { Tmdb.find(seed.name, seed.year, seed.movie) }.onFailure { logError(it) }.getOrNull()
+                            .also { synchronized(found) { found[key] = it } }
+                    }
+                    title?.let { seed to it }
+                }
+            }.awaitAll().filterNotNull()
+        }.await()
+
+        val known = resolved.map { it.second.key }.toSet() + AppData.dismissedRecommendations.value
+        val knownNames = (seeds.map { it.name.lowercase() } + resolved.map { it.second.name.lowercase() }).toSet()
+        val scores = HashMap<String, Double>()
+        val titles = HashMap<String, TmdbTitle>()
+        val because = HashMap<String, Pair<String, Double>>()
+        resolved.map { (seed, title) ->
+            scope.async {
+                seed to limit.withPermit { runCatching { Tmdb.recommendations(title) }.onFailure { logError(it) }.getOrDefault(emptyList()) }
+            }
+        }.awaitAll().forEach { (seed, recommended) ->
+            recommended.forEachIndexed { rank, title ->
+                if (title.key in known || title.name.lowercase() in knownNames) return@forEachIndexed
+                // TMDB lists the closest titles first
+                val points = seed.weight * (1.0 - rank / 25.0)
+                scores[title.key] = (scores[title.key] ?: 0.0) + points
+                titles[title.key] = title
+                if (points > (because[title.key]?.second ?: 0.0)) because[title.key] = seed.name to points
+            }
+        }
+        val items = scores.filterValues { it > 0 }.entries.sortedByDescending { it.value }.take(40).map { (key, score) ->
+            Recommendation(titles.getValue(key), score, because[key]?.first ?: "")
+        }
+        cache = Cache(seeds.hashCode(), I18n.current, System.currentTimeMillis(), items, found)
+        _items.value = items
+        runCatching { mapper.writeValue(file, cache) }.onFailure { logError(it) }
+    }
+
+    fun dismiss(item: Recommendation) {
+        AppData.dismissRecommendation(item.title.key)
+        _items.value = _items.value - item
+    }
+}
