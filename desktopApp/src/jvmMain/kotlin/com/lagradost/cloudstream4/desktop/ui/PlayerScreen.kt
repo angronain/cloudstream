@@ -356,6 +356,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
 
     val seekMs = settings.seekSeconds * 1000L
     var showShortcuts by remember { mutableStateOf(false) }
+    var searchingSubtitles by remember { mutableStateOf(false) }
 
     // Two-finger swipes: horizontal seeks, vertical changes the volume. One direction is kept per swipe.
     val swipe = remember { SwipeGesture() }
@@ -421,6 +422,13 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                     return@onKeyEvent true
                 }
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                // Typing in the subtitle search must not control playback
+                if (searchingSubtitles) {
+                    if (event.key != Key.Escape) return@onKeyEvent false
+                    searchingSubtitles = false
+                    focus.requestFocus()
+                    return@onKeyEvent true
+                }
                 lastInteraction = System.currentTimeMillis()
                 when (event.key) {
                     Key.Spacebar, Key.K -> engine.togglePause()
@@ -487,6 +495,20 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                     }
                 }
             }
+        }
+
+        if (searchingSubtitles) {
+            SubtitleSearchPanel(
+                title = route.media.name,
+                season = playable.season,
+                episode = playable.episode,
+                onPicked = engine::addSubtitleFile,
+                onClose = {
+                    searchingSubtitles = false
+                    focus.requestFocus()
+                },
+                modifier = Modifier.align(Alignment.Center),
+            )
         }
 
         swipeLabel?.let { label ->
@@ -647,6 +669,10 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                     },
                                 )
                             }
+                            DropdownMenuItem(text = { Text(tr("Search online…")) }, onClick = {
+                                close()
+                                searchingSubtitles = true
+                            })
                             // Lines up subtitles made for another release, the menu stays open while adjusting
                             HorizontalDivider()
                             DropdownMenuItem(
