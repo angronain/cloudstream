@@ -86,6 +86,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.DiscordPresence
 import com.lagradost.cloudstream4.desktop.data.Presence
+import com.lagradost.cloudstream4.desktop.data.Trakt
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
 import com.lagradost.cloudstream4.desktop.data.SavedSource
 import com.lagradost.cloudstream4.desktop.data.WatchProgress
@@ -328,6 +329,16 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         }
     }
     DisposableEffect(engine) { onDispose { DiscordPresence.clear() } }
+
+    // Trakt marks the episode or movie as watched when playback stops past 80%
+    fun traktProgress() = if (engine.lengthMs > 0) engine.timeMs.toFloat() / engine.lengthMs else 0f
+    LaunchedEffect(playable, engine.isPlaying, engine.lengthMs > 0) {
+        if (engine.lengthMs <= 0) return@LaunchedEffect
+        Trakt.scrobble(if (engine.isPlaying) "start" else "pause", route.media, playable.season, playable.episode, traktProgress())
+    }
+    DisposableEffect(playable) {
+        onDispose { Trakt.scrobble("stop", route.media, playable.season, playable.episode, traktProgress()) }
+    }
 
     if (!inPip) {
         val visible = windowState?.isMinimized != true && !AppVisibility.isHidden

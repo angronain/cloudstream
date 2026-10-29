@@ -46,6 +46,9 @@ import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.Letterboxd
 import com.lagradost.cloudstream4.desktop.data.DiscordPresence
+import com.lagradost.cloudstream4.desktop.data.Trakt
+import com.lagradost.cloudstream4.desktop.data.TraktState
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.lagradost.cloudstream4.desktop.data.OperatingSystem
 import com.lagradost.cloudstream4.desktop.data.Sync
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
@@ -299,6 +302,67 @@ fun SettingsScreen() {
                     style = MaterialTheme.typography.bodySmall,
                     color = if (status.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        Section(tr("Trakt")) {
+            val trakt by Trakt.state.collectAsState()
+            val traktMessage by Trakt.message.collectAsState()
+            Text(
+                tr("Marks what you watch as watched on Trakt, sends your ratings and Plan to watch list there, and uses your Trakt ratings for the recommendations."),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            when (val current = trakt) {
+                is TraktState.SignedIn -> {
+                    Text(tr("Signed in as {0}", current.username ?: "Trakt"), style = MaterialTheme.typography.bodyMedium)
+                    SwitchRow(tr("Mark as watched on Trakt"), null, settings.traktScrobble) { value ->
+                        AppData.updateSettings { it.copy(traktScrobble = value) }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TextButton(onClick = Trakt::syncLibrary) { Text(tr("Sync ratings and list")) }
+                        TextButton(onClick = Trakt::signOut) { Text(tr("Sign out")) }
+                    }
+                    traktMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+
+                is TraktState.WaitingForCode -> {
+                    Text(tr("Enter this code at {0}", current.url), style = MaterialTheme.typography.bodyMedium)
+                    Text(current.code, style = MaterialTheme.typography.headlineMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TextButton(onClick = { openInBrowser(current.url) }) { Text(tr("Open trakt.tv")) }
+                        TextButton(onClick = Trakt::signOut) { Text(tr("Cancel")) }
+                    }
+                }
+
+                else -> {
+                    Text(
+                        tr("Trakt needs an application of your own: at trakt.tv/oauth/applications, click New Application, name it CloudStream, enter urn:ietf:wg:oauth:2.0:oob as the redirect URI, save, and paste its Client ID and Client Secret here."),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { openInBrowser("https://trakt.tv/oauth/applications") }) { Text(tr("Open Trakt applications")) }
+                    OutlinedTextField(
+                        value = settings.traktClientId,
+                        onValueChange = { value -> AppData.updateSettings { it.copy(traktClientId = value.trim()) } },
+                        label = { Text(tr("Client ID")) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = settings.traktClientSecret,
+                        onValueChange = { value -> AppData.updateSettings { it.copy(traktClientSecret = value.trim()) } },
+                        label = { Text(tr("Client Secret")) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextButton(
+                        onClick = { Trakt.signIn(::openInBrowser) },
+                        enabled = settings.traktClientId.isNotBlank() && settings.traktClientSecret.isNotBlank(),
+                    ) { Text(tr("Sign in to Trakt")) }
+                    (current as? TraktState.Failed)?.let { Text(it.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                }
             }
         }
 

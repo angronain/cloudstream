@@ -179,6 +179,11 @@ data class Settings(
     val discordPresence: Boolean = false,
     /** The Discord application whose name Discord shows, from discord.com/developers/applications */
     val discordApplicationId: String = "",
+    /** The user's Trakt API application, from trakt.tv/oauth/applications */
+    val traktClientId: String = "",
+    val traktClientSecret: String = "",
+    /** Marks what is watched in the player as watched on Trakt */
+    val traktScrobble: Boolean = true,
 )
 
 /** Episodes of a show at the last check, and how many appeared since the user last watched it */
@@ -459,6 +464,11 @@ object AppData {
     private val _changes = MutableStateFlow(store.get("changes", emptyMap<String, Long>()))
 
     private fun changed(key: String) = _changes.persist("changes") { it + (key to System.currentTimeMillis()) }
+
+    /** The signed in Trakt account, kept out of backups and sync */
+    var traktAccount: TraktAccount?
+        get() = store.get<TraktAccount>("trakt")
+        set(value) = store.set("trakt", value)
 
     /** This computer, so it can tell its own sync file from the others' */
     val deviceId: String by lazy {
