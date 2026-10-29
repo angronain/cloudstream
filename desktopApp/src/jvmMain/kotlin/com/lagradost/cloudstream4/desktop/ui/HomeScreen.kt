@@ -221,7 +221,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
         val spotlightHeight = (maxHeight * 0.86f).coerceIn(480.dp, 900.dp)
         val listState = rememberLazyListState()
         val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 40 } }
-        LaunchedEffect(scrolled) { navigator.homeScrolled = scrolled }
+        LaunchedEffect(scrolled) { navigator.heroScrolled = scrolled }
         LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 24.dp)) {
             if (spotlight.isNotEmpty()) {
                 item(key = "spotlight") { Spotlight(spotlight, spotlightHeight) }

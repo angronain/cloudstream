@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,12 +59,12 @@ fun LibraryScreen() {
 
     Column(Modifier.fillMaxSize()) {
         Row(
-            Modifier.fillMaxWidth().padding(16.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LibraryTab.entries.forEach {
-                FilterChip(tab == it, onClick = { tab = it }, label = { Text(it.title) })
+                ChoicePill(it.title, tab == it) { tab = it }
             }
             if (tab == LibraryTab.History && history.isNotEmpty()) {
                 TextButton(onClick = AppData::clearHistory) { Text(tr("Clear history")) }
@@ -90,13 +89,14 @@ fun LibraryScreen() {
         val listFor = { entry: MediaEntry -> watchLists[entry.url] ?: WatchList.PlanToWatch }
         if (tab == LibraryTab.Bookmarks && bookmarks.isNotEmpty()) {
             FlowRow(
-                Modifier.padding(horizontal = 16.dp),
+                Modifier.padding(horizontal = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilterChip(list == null, onClick = { list = null }, label = { Text(tr("All ({0})", bookmarks.size)) })
+                ChoicePill(tr("All ({0})", bookmarks.size), list == null) { list = null }
                 WatchList.entries.forEach { option ->
                     val count = bookmarks.count { listFor(it) == option }
-                    FilterChip(list == option, onClick = { list = option }, label = { Text(tr("{0} ({1})", option.title, count)) })
+                    ChoicePill(tr("{0} ({1})", option.title, count), list == option) { list = option }
                 }
             }
         }
@@ -125,7 +125,7 @@ fun LibraryScreen() {
 
         LazyVerticalGrid(
             columns = GridCells.Adaptive(150.dp),
-            contentPadding = PaddingValues(12.dp),
+            contentPadding = PaddingValues(horizontal = 36.dp, vertical = 12.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
             when (tab) {

@@ -1,6 +1,8 @@
 package com.lagradost.cloudstream4.desktop.ui
 
 import com.lagradost.cloudstream4.desktop.data.tr
+import androidx.compose.material3.IconButton
+import com.lagradost.cloudstream4.desktop.generated.resources.arrow_back
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.SolidColor
@@ -120,8 +122,8 @@ fun App(navigator: Navigator) {
             contentColor = MaterialTheme.colorScheme.onBackground,
         ) {
             if (route !is Route.Player) Box(Modifier.fillMaxSize()) {
-                // Home's spotlight runs under the navigation bar, the other screens start below it
-                val overHome = route == null && navigator.tab == Tab.Home
+                // Home's spotlight and a title's artwork run under the navigation bar, the other screens start below it
+                val overHome = (route == null && navigator.tab == Tab.Home) || route is Route.Result
                 Box(Modifier.fillMaxSize().padding(top = if (overHome) 0.dp else TopBarHeight)) {
                     when (route) {
                         is Route.Result -> stateHolder.SaveableStateProvider(route.toString()) { ResultScreen(route.media) }
@@ -139,7 +141,7 @@ fun App(navigator: Navigator) {
                         is Route.Player -> Unit
                     }
                 }
-                TopBar(navigator, overHome && !navigator.homeScrolled)
+                TopBar(navigator, overHome && !navigator.heroScrolled)
                 if (loadingPlugins) {
                     LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
                 }
@@ -168,6 +170,11 @@ private fun TopBar(navigator: Navigator, overHome: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        if (navigator.current != null) {
+            IconButton(onClick = { navigator.back() }, modifier = Modifier.padding(end = 8.dp)) {
+                Icon(painterResource(Res.drawable.arrow_back), tr("Back"), tint = content)
+            }
+        }
         Text(
             "CloudStream",
             style = MaterialTheme.typography.titleLarge,

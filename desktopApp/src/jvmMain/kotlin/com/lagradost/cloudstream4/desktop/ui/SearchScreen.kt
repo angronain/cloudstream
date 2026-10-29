@@ -12,11 +12,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -127,35 +131,43 @@ fun SearchScreen(viewModel: SearchViewModel) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = state.query,
-            onValueChange = viewModel::onQueryChange,
-            placeholder = { Text(tr("Search all extensions")) },
-            leadingIcon = { Icon(painterResource(Res.drawable.search), null) },
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
-            modifier = Modifier.fillMaxWidth().padding(16.dp).focusRequester(focus)
-                .onEnter { viewModel.search() },
-        )
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SearchFilter.entries.forEach { filter ->
-                FilterChip(
-                    selected = state.filter == filter,
-                    onClick = { viewModel.onFilterChange(filter) },
-                    label = { Text(filter.title) },
-                )
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            OutlinedTextField(
+                value = state.query,
+                onValueChange = viewModel::onQueryChange,
+                placeholder = { Text(tr("Search all extensions")) },
+                leadingIcon = { Icon(painterResource(Res.drawable.search), null) },
+                singleLine = true,
+                shape = RoundedCornerShape(50),
+                textStyle = MaterialTheme.typography.titleMedium,
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.06f),
+                    focusedContainerColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.08f),
+                    unfocusedBorderColor = Color.Transparent,
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
+                modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth().focusRequester(focus)
+                    .onEnter { viewModel.search() },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SearchFilter.entries.forEach { filter ->
+                    ChoicePill(filter.title, state.filter == filter) { viewModel.onFilterChange(filter) }
+                }
             }
         }
-        if (state.pending > 0) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+        if (state.pending > 0) LinearProgressIndicator(Modifier.fillMaxWidth())
 
         if (PluginManager.providers().isEmpty()) {
             MessageBox(tr("No extensions installed"), tr("Install extensions from the Extensions tab to search."))
             return
         }
 
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
             items(state.results, key = { it.provider }) { result ->
                 when {
                     result.items.isNotEmpty() -> SearchResponseRow(result.provider, result.items)
@@ -163,6 +175,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
                         "${result.provider}: ${result.error ?: tr("No results")}",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
             }

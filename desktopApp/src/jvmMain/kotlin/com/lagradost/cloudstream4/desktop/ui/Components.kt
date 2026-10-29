@@ -393,3 +393,20 @@ fun Modifier.onEnter(action: () -> Unit): Modifier = onPreviewKeyEvent { event -
         true
     } else false
 }
+
+/** A rounded choice among others, filled when [selected] */
+@Composable
+fun ChoicePill(text: String, selected: Boolean, onClick: () -> Unit) {
+    val content = MaterialTheme.colorScheme.onBackground
+    Text(
+        text,
+        Modifier.clip(RoundedCornerShape(50))
+            .background(if (selected) content else content.copy(alpha = 0.08f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        color = if (selected) MaterialTheme.colorScheme.background else content.copy(alpha = 0.85f),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+        maxLines = 1,
+    )
+}

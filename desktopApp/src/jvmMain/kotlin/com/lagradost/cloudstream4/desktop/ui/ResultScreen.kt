@@ -1,6 +1,22 @@
 package com.lagradost.cloudstream4.desktop.ui
 
 import com.lagradost.cloudstream4.desktop.data.tr
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.text.style.TextAlign
+import com.lagradost.cloudstream4.desktop.data.Tmdb
+import com.lagradost.cloudstream4.desktop.data.TmdbTitle
+import com.lagradost.cloudstream4.desktop.generated.resources.add
+import com.lagradost.cloudstream4.desktop.generated.resources.check
+import com.lagradost.cloudstream4.desktop.generated.resources.star_border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -194,28 +210,25 @@ fun ResultScreen(media: MediaEntry) {
         state = ResultState.Loading
         state = load(media)
     }
+    // Only the loaded page has artwork under the navigation bar
+    LaunchedEffect(state is ResultState.Loaded) { if (state !is ResultState.Loaded) navigator.heroScrolled = true }
 
     Box(Modifier.fillMaxSize()) {
         when (val current = state) {
-            ResultState.Loading -> LoadingBox(tr("Loading {0}", media.name))
-            is ResultState.Error -> MessageBox(
-                tr("Could not load {0}", media.name),
-                current.message,
-                action = tr("Retry") to { reloadKey++ },
-            )
+            ResultState.Loading -> LoadingBox(tr("Loading {0}", media.name), Modifier.fillMaxSize().padding(top = 64.dp))
+            is ResultState.Error -> Box(Modifier.fillMaxSize().padding(top = 64.dp)) {
+                MessageBox(
+                    tr("Could not load {0}", media.name),
+                    current.message,
+                    action = tr("Retry") to { reloadKey++ },
+                )
+            }
 
             is ResultState.Loaded -> ResultContent(media, current.response)
-        }
-        IconButton(
-            onClick = { navigator.back() },
-            modifier = Modifier.padding(8.dp).background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(50)),
-        ) {
-            Icon(painterResource(Res.drawable.arrow_back), tr("Back"), tint = Color.White)
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ResultContent(media: MediaEntry, response: LoadResponse) {
     val navigator = LocalNavigator.current
@@ -236,7 +249,13 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
         mutableStateOf(groups?.byDub?.keys?.let { keys -> keys.firstOrNull { it == DubStatus.Subbed } ?: keys.firstOrNull() })
     }
     val seasons = groups?.byDub?.get(dub).orEmpty()
-    var season by remember(groups, dub) { mutableStateOf(seasons.keys.firstOrNull()) }
+    // The season of the last episode watched, else the first
+    var season by remember(groups, dub) {
+        mutableStateOf(
+            seasons.entries.lastOrNull { (_, list) -> list.any { (positions[it.data]?.positionMs ?: 0L) > 0L } }?.key
+                ?: seasons.keys.firstOrNull()
+        )
+    }
     val episodes = seasons[season].orEmpty()
 
     fun playEpisodes(list: List<Episode>, index: Int) = navigator.push(Route.Player(entry, response.playlist(list), index))
@@ -247,82 +266,108 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
         else -> null
     }
 
-    LazyColumn(Modifier.fillMaxSize()) {
-        item {
-            Box(Modifier.fillMaxWidth().height(360.dp)) {
-                RemoteImage(
-                    response.backgroundPosterUrl ?: response.posterUrl,
-                    Modifier.fillMaxSize(),
-                    response.posterHeaders,
-                )
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background))
+    // Providers often only have a poster, TMDB has wide artwork for most titles
+    val tmdb by produceState<TmdbTitle?>(null, response) {
+        if (response.backgroundPosterUrl == null) {
+            value = runCatching { Tmdb.find(response.name, response.year, response.type.isMovie()) }.getOrNull()
+        }
+    }
+    var ambient by remember(media) { mutableStateOf(DefaultAmbient) }
+    val background by animateColorAsState(ambient, tween(600))
+
+    val listState = rememberLazyListState()
+    val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 300 } }
+    LaunchedEffect(scrolled) { navigator.heroScrolled = scrolled }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val heroHeight = (maxHeight * 0.78f).coerceIn(460.dp, 820.dp)
+        val wide = maxWidth > 900.dp
+        LazyColumn(Modifier.fillMaxSize(), state = listState) {
+            item {
+                Box(Modifier.fillMaxWidth().height(heroHeight).background(background)) {
+                    val tmdbArt = tmdb?.backdropUrl
+                    AmbientArtwork(
+                        response.backgroundPosterUrl ?: tmdbArt ?: response.posterUrl,
+                        if (response.backgroundPosterUrl == null && tmdbArt != null) null else response.posterHeaders,
+                        background, wide,
+                    ) { ambient = it }
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(160.dp)
+                            .background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.background)))
                     )
-                )
-                Row(
-                    Modifier.align(Alignment.BottomStart).padding(24.dp),
-                    verticalAlignment = Alignment.Bottom,
-                ) {
-                    RemoteImage(
-                        response.posterUrl,
-                        Modifier.width(150.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(10.dp)),
-                        response.posterHeaders,
-                    )
-                    Spacer(Modifier.width(20.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(response.name, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            listOfNotNull(
-                                response.year?.toString(),
-                                response.type.name,
-                                response.duration?.let { "$it min" },
-                                response.contentRating,
-                                response.apiName,
-                            ).forEach { Pill(it) }
-                            response.score?.let { score ->
-                                Icon(painterResource(Res.drawable.star), null, Modifier.size(18.dp))
-                                Text(score.toString())
-                            }
+                    Column(
+                        Modifier.align(Alignment.BottomStart).padding(start = 40.dp, end = 24.dp, bottom = 40.dp).widthIn(max = 620.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(response.apiName, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            response.name, color = Color.White, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                        val meta = listOfNotNull(
+                            response.year?.toString(),
+                            response.type.name,
+                            response.duration?.let { if (it >= 60) "${it / 60} h ${it % 60} min" else "$it min" },
+                            response.contentRating,
+                            response.score?.let { "★ $it" },
+                        )
+                        Text(meta.joinToString("  ·  "), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium)
+                        response.tags?.takeIf { it.isNotEmpty() }?.let { tags ->
+                            Text(tags.take(5).joinToString(" · "), color = Color.White.copy(alpha = 0.6f), style = MaterialTheme.typography.bodySmall)
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (response.comingSoon) Text(tr("Coming soon"), color = Color.White, style = MaterialTheme.typography.labelLarge)
+                        response.plot?.let {
+                            Text(it, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                        }
+
+                        // Where the user is in this season
+                        val resumeIndex = episodes.indexOfFirst { (positions[it.data]?.fraction ?: 0f) < WATCHED_FRACTION }.coerceAtLeast(0)
+                        val started = episodes.any { (positions[it.data]?.positionMs ?: 0L) > 0L }
+                        if (started && episodes.size in 2..40) {
+                            SeasonLine(episodes.size, resumeIndex + 1, positions[episodes[resumeIndex].data]?.fraction ?: 0f)
+                        } else if (movieData != null) {
+                            positions[movieData]?.fraction?.takeIf { it > 0f }?.let { SeasonLine(1, 1, it) }
+                        }
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 6.dp),
+                        ) {
                             when {
-                                movieData != null -> Button(onClick = {
-                                    navigator.push(
-                                        Route.Player(entry, listOf(Playable(movieData, response.name, posterUrl = response.posterUrl)), 0)
-                                    )
-                                }) {
-                                    Icon(painterResource(Res.drawable.play), null)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(if (positions[movieData]?.positionMs?.let { it > 0 } == true) tr("Resume") else tr("Play"))
+                                movieData != null -> PrimaryPill(
+                                    if (positions[movieData]?.positionMs?.let { it > 0 } == true) tr("Resume") else tr("Play"),
+                                    Res.drawable.play, false,
+                                ) {
+                                    navigator.push(Route.Player(entry, listOf(Playable(movieData, response.name, posterUrl = response.posterUrl)), 0))
                                 }
 
-                                response is TorrentLoadResponse -> Button(onClick = {
+                                response is TorrentLoadResponse -> PrimaryPill(tr("Open in torrent client"), Res.drawable.open_in_new, false) {
                                     (response.magnet ?: response.torrent)?.let(::openInBrowser)
-                                }) { Text(tr("Open in torrent client")) }
+                                }
 
-                                episodes.isNotEmpty() -> Button(onClick = {
-                                    // Continue with the first unfinished episode of this season
-                                    val index = episodes.indexOfFirst { (positions[it.data]?.fraction ?: 0f) < WATCHED_FRACTION }
-                                    playEpisodes(episodes, index.coerceAtLeast(0))
-                                }) {
-                                    Icon(painterResource(Res.drawable.play), null)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(tr("Play"))
+                                episodes.isNotEmpty() -> {
+                                    val next = episodes[resumeIndex]
+                                    val label = when {
+                                        !started -> tr("Play")
+                                        next.season != null && next.episode != null -> tr("Resume S{0}E{1}", next.season, next.episode)
+                                        else -> tr("Resume")
+                                    }
+                                    PrimaryPill(label, Res.drawable.play, false) { playEpisodes(episodes, resumeIndex) }
                                 }
                             }
                             if (movieData != null && response !is LiveStreamLoadResponse) {
-                                DownloadButton(entry, Playable(movieData, response.name, posterUrl = response.posterUrl))
+                                Box(Modifier.size(40.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+                                    CompositionLocalProvider(LocalContentColor provides Color.White) {
+                                        DownloadButton(entry, Playable(movieData, response.name, posterUrl = response.posterUrl))
+                                    }
+                                }
                             }
                             val saved = bookmarks.any { it.url == media.url }
                             val list = watchLists[media.url] ?: WatchList.PlanToWatch
                             Box {
                                 var listMenu by remember { mutableStateOf(false) }
-                                OutlinedButton(onClick = { listMenu = true }) {
-                                    Icon(painterResource(if (saved) Res.drawable.bookmark else Res.drawable.bookmark_border), null)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(if (saved) list.title else tr("Bookmark"))
-                                }
+                                GhostPill(if (saved) list.title else tr("My list"), if (saved) Res.drawable.bookmark else Res.drawable.add) { listMenu = true }
                                 DropdownMenu(listMenu, onDismissRequest = { listMenu = false }) {
                                     WatchList.entries.forEach { option ->
                                         DropdownMenuItem(
@@ -342,106 +387,103 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                                     }
                                 }
                             }
-                            OutlinedButton(onClick = { openInBrowser(response.url) }) {
-                                Icon(painterResource(Res.drawable.open_in_new), null)
-                                Spacer(Modifier.width(6.dp))
-                                Text(tr("Website"))
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             val rating = ratings[media.url]
-                            RatingBar(rating?.stars, onRate = { AppData.rate(entry, it, response.year) })
-                            IconButton(onClick = { AppData.toggleLike(entry, response.year) }) {
-                                Icon(
-                                    painterResource(if (rating?.liked == true) Res.drawable.favorite else Res.drawable.favorite_border),
-                                    if (rating?.liked == true) tr("Unlike") else tr("Like"),
-                                    tint = if (rating?.liked == true) Color(0xFFFF8000) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                            var rate by remember { mutableStateOf(false) }
+                            if (rate) {
+                                Box(Modifier.height(40.dp), contentAlignment = Alignment.Center) {
+                                    RatingBar(rating?.stars, { AppData.rate(entry, it, response.year); rate = false }, starSize = 22.dp)
+                                }
+                            } else {
+                                GhostPill(rating?.stars?.let { formatStars(it) } ?: tr("Rate"), Res.drawable.star_border) { rate = true }
                             }
+                            GhostPill(
+                                if (rating?.liked == true) tr("Unlike") else tr("Like"),
+                                if (rating?.liked == true) Res.drawable.favorite else Res.drawable.favorite_border,
+                            ) { AppData.toggleLike(entry, response.year) }
+                            GhostPill(tr("Website"), Res.drawable.open_in_new) { openInBrowser(response.url) }
                         }
                     }
                 }
             }
-        }
 
-        item {
-            Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (response.comingSoon) Pill(tr("Coming soon"))
-                response.plot?.let {
-                    Text(it, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.widthIn(max = 900.dp))
-                }
-                response.tags?.takeIf { it.isNotEmpty() }?.let { tags ->
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        tags.forEach { Pill(it) }
+            if (groups != null) {
+                item {
+                    Column(Modifier.padding(start = 40.dp, end = 40.dp, top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(tr("Episodes"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        if (groups.byDub.size > 1) {
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                groups.byDub.keys.forEach { status -> ChoicePill(status.name, dub == status) { dub = status } }
+                            }
+                        }
+                        if (seasons.size > 1) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(seasons.keys.toList()) { key ->
+                                    ChoicePill(key?.let { groups.seasonNames[it] ?: tr("Season {0}", it) } ?: tr("Episodes"), season == key) { season = key }
+                                }
+                            }
+                        }
+                        if (episodes.isEmpty()) Text(tr("No episodes found"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                response.actors?.takeIf { it.isNotEmpty() }?.let { actors ->
-                    Text(
-                        "Cast: " + actors.take(12).joinToString(", ") { it.actor.name },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                items(episodes.size, key = { episodes[it].data + it }) { index ->
+                    val episode = episodes[index]
+                    EpisodeRow(
+                        download = {
+                            DownloadButton(
+                                entry,
+                                Playable(episode.data, "${response.name} · ${episode.label(index)}", episode.season, episode.episode, episode.posterUrl),
+                            )
+                        },
+                        number = episode.episode ?: (index + 1),
+                        title = episode.name?.takeIf { it.isNotBlank() } ?: episode.label(index),
+                        description = episode.description,
+                        posterUrl = episode.posterUrl ?: response.posterUrl,
+                        headers = response.posterHeaders,
+                        progress = positions[episode.data]?.fraction,
+                        onClick = { playEpisodes(episodes, index) },
                     )
                 }
             }
-        }
 
-        if (groups != null) {
-            item {
-                Column(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (groups.byDub.size > 1) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            groups.byDub.keys.forEach { status ->
-                                FilterChip(dub == status, onClick = { dub = status }, label = { Text(status.name) })
+            response.actors?.takeIf { it.isNotEmpty() }?.let { actors ->
+                item {
+                    Text(
+                        tr("Cast"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(start = 40.dp, top = 24.dp, bottom = 12.dp),
+                    )
+                    LazyRow(contentPadding = PaddingValues(horizontal = 40.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        items(actors.take(30)) { data ->
+                            Column(Modifier.width(96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                RemoteImage(data.actor.image, Modifier.size(84.dp).clip(RoundedCornerShape(50)))
+                                Spacer(Modifier.height(6.dp))
+                                Text(data.actor.name, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                data.roleString?.let {
+                                    Text(
+                                        it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                                    )
+                                }
                             }
                         }
                     }
-                    if (seasons.size > 1) {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(seasons.keys.toList()) { key ->
-                                FilterChip(
-                                    season == key,
-                                    onClick = { season = key },
-                                    label = { Text(key?.let { groups.seasonNames[it] ?: tr("Season {0}", it) } ?: "Episodes") },
-                                )
-                            }
-                        }
-                    }
-                    if (episodes.isEmpty()) Text(tr("No episodes found"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            items(episodes.size, key = { episodes[it].data + it }) { index ->
-                val episode = episodes[index]
-                EpisodeRow(
-                    download = {
-                        DownloadButton(
-                            entry,
-                            Playable(episode.data, "${response.name} · ${episode.label(index)}", episode.season, episode.episode, episode.posterUrl),
-                        )
-                    },
-                    title = episode.label(index),
-                    description = episode.description,
-                    posterUrl = episode.posterUrl ?: response.posterUrl,
-                    headers = response.posterHeaders,
-                    progress = positions[episode.data]?.fraction,
-                    onClick = { playEpisodes(episodes, index) },
-                )
-            }
-        }
 
-        response.recommendations?.takeIf { it.isNotEmpty() }?.let { recommendations ->
-            item {
-                Spacer(Modifier.height(16.dp))
-                SearchResponseRow(tr("Recommended"), recommendations)
-                Spacer(Modifier.height(24.dp))
+            response.recommendations?.takeIf { it.isNotEmpty() }?.let { recommendations ->
+                item {
+                    Spacer(Modifier.height(24.dp))
+                    Box(Modifier.padding(horizontal = 24.dp)) { SearchResponseRow(tr("More like this"), recommendations) }
+                }
             }
+            item { Spacer(Modifier.height(48.dp)) }
         }
-        item { Spacer(Modifier.height(32.dp)) }
     }
 }
 
 @Composable
 private fun EpisodeRow(
     download: @Composable () -> Unit,
+    number: Int,
     title: String,
     description: String?,
     posterUrl: String?,
@@ -449,35 +491,43 @@ private fun EpisodeRow(
     progress: Float?,
     onClick: () -> Unit,
 ) {
+    val watched = (progress ?: 0f) >= WATCHED_FRACTION
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .padding(horizontal = 28.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(8.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(180.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
+        Text(
+            number.toString(),
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(44.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.width(200.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp))) {
             RemoteImage(posterUrl, Modifier.fillMaxSize(), headers)
+            if (watched) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
             Icon(
-                painterResource(Res.drawable.play),
+                painterResource(if (watched) Res.drawable.check else Res.drawable.play),
                 null,
                 Modifier.align(Alignment.Center).size(36.dp)
                     .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50)).padding(6.dp),
                 tint = Color.White,
             )
-            if (progress != null && progress > 0f) {
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
-                    drawStopIndicator = {},
-                )
+            if (progress != null && progress > 0f && !watched) {
+                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp).background(Color.White.copy(alpha = 0.3f))) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(progress).background(MaterialTheme.colorScheme.primary))
+                }
             }
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(20.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
             description?.let {
                 Text(
                     it,

@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -114,7 +115,7 @@ data class SpotlightItem(
     val recommendation: Recommendation? = null,
 )
 
-private fun TvType?.isMovie(): Boolean? = when (this) {
+internal fun TvType?.isMovie(): Boolean? = when (this) {
     null, TvType.Others -> null
     TvType.Movie, TvType.AnimeMovie, TvType.Documentary, TvType.Torrent -> true
     else -> false
@@ -211,7 +212,7 @@ suspend fun openOnDefaultSource(name: String, year: Int?, navigator: Navigator) 
 }
 
 /** A dark color of the image, for the background around it */
-private fun ambientOf(image: coil3.Image): Color? = runCatching {
+internal fun ambientOf(image: coil3.Image): Color? = runCatching {
     val bitmap = image.toBitmap()
     var r = 0L
     var g = 0L
@@ -227,7 +228,7 @@ private fun ambientOf(image: coil3.Image): Color? = runCatching {
     Color(java.awt.Color.HSBtoRGB(hsb[0], saturation, 0.2f))
 }.getOrNull()
 
-private val DefaultAmbient = Color(0xFF15122B)
+internal val DefaultAmbient = Color(0xFF15122B)
 
 /**
  * The top of Home: one title over the whole width, with its artwork, why it is here, its episodes and cast,
@@ -247,26 +248,11 @@ fun Spotlight(items: List<SpotlightItem>, height: androidx.compose.ui.unit.Dp) {
 
     BoxWithConstraints(Modifier.fillMaxWidth().height(height).background(background)) {
         val wide = maxWidth > 900.dp
-        // The artwork fills the right side and fades into the background on its left and bottom
-        Box(Modifier.align(Alignment.TopEnd).fillMaxWidth(if (wide) 0.66f else 1f).fillMaxHeight()) {
-            val url = info?.title?.backdropUrl ?: selected.imageUrl
-            val headers = if (info?.title?.backdropUrl != null) null else selected.imageHeaders
-            val context = LocalPlatformContext.current
-            Crossfade(url to headers, animationSpec = tween(500)) { (imageUrl, imageHeaders) ->
-                val request = remember(imageUrl, imageHeaders) {
-                    ImageRequest.Builder(context).data(imageUrl).crossfade(true).apply {
-                        if (!imageHeaders.isNullOrEmpty()) httpHeaders(NetworkHeaders.Builder().apply { imageHeaders.forEach { (k, v) -> set(k, v) } }.build())
-                    }.build()
-                }
-                AsyncImage(
-                    request, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
-                    onSuccess = { state -> ambientOf(state.result.image)?.let { ambient = it } },
-                )
-            }
-            Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to background, (if (wide) 0.45f else 0.8f) to background.copy(alpha = if (wide) 0f else 0.55f))))
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to background)))
-            if (!wide) Box(Modifier.fillMaxSize().background(background.copy(alpha = 0.35f)))
-        }
+        AmbientArtwork(
+            info?.title?.backdropUrl ?: selected.imageUrl,
+            if (info?.title?.backdropUrl != null) null else selected.imageHeaders,
+            background, wide,
+        ) { ambient = it }
 
         Column(
             Modifier.align(Alignment.TopStart).padding(start = 40.dp, top = 88.dp, end = 24.dp).widthIn(max = 480.dp),
@@ -291,6 +277,28 @@ fun Spotlight(items: List<SpotlightItem>, height: androidx.compose.ui.unit.Dp) {
                 StripCard(item, details[item.key], item.key == selected.key) { selectedKey = item.key }
             }
         }
+    }
+}
+
+/** Artwork filling the right side that fades into [background] on its left and bottom, [onAmbient] gets its dark color */
+@Composable
+internal fun BoxScope.AmbientArtwork(url: String?, headers: Map<String, String>?, background: Color, wide: Boolean, onAmbient: (Color) -> Unit) {
+    Box(Modifier.align(Alignment.TopEnd).fillMaxWidth(if (wide) 0.66f else 1f).fillMaxHeight()) {
+        val context = LocalPlatformContext.current
+        Crossfade(url to headers, animationSpec = tween(500)) { (imageUrl, imageHeaders) ->
+            val request = remember(imageUrl, imageHeaders) {
+                ImageRequest.Builder(context).data(imageUrl).crossfade(true).apply {
+                    if (!imageHeaders.isNullOrEmpty()) httpHeaders(NetworkHeaders.Builder().apply { imageHeaders.forEach { (k, v) -> set(k, v) } }.build())
+                }.build()
+            }
+            AsyncImage(
+                request, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop,
+                onSuccess = { state -> ambientOf(state.result.image)?.let(onAmbient) },
+            )
+        }
+        Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to background, (if (wide) 0.45f else 0.8f) to background.copy(alpha = if (wide) 0f else 0.55f))))
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to background)))
+        if (!wide) Box(Modifier.fillMaxSize().background(background.copy(alpha = 0.35f)))
     }
 }
 
@@ -480,7 +488,7 @@ private fun EpisodeList(item: SpotlightItem, title: TmdbTitle, watchingSeason: I
 
 /** One segment per episode, the watched ones filled, the current one filled as far as it was watched */
 @Composable
-private fun SeasonLine(count: Int, current: Int, fraction: Float) {
+internal fun SeasonLine(count: Int, current: Int, fraction: Float) {
     Row(Modifier.width(if (count == 1) 260.dp else minOf(420, count * 28).dp).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
         for (i in 1..count) {
             Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.25f))) {
@@ -496,7 +504,7 @@ private fun SeasonLine(count: Int, current: Int, fraction: Float) {
 }
 
 @Composable
-private fun PrimaryPill(text: String, icon: DrawableResource, busy: Boolean, onClick: () -> Unit) {
+internal fun PrimaryPill(text: String, icon: DrawableResource, busy: Boolean, onClick: () -> Unit) {
     Row(
         Modifier.clip(RoundedCornerShape(50)).background(Color.White).clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -509,7 +517,7 @@ private fun PrimaryPill(text: String, icon: DrawableResource, busy: Boolean, onC
 }
 
 @Composable
-private fun GhostPill(text: String, icon: DrawableResource, onClick: () -> Unit) {
+internal fun GhostPill(text: String, icon: DrawableResource, onClick: () -> Unit) {
     Row(
         Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.12f)).clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
