@@ -84,6 +84,8 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.DiscordPresence
+import com.lagradost.cloudstream4.desktop.data.Presence
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
 import com.lagradost.cloudstream4.desktop.data.SavedSource
 import com.lagradost.cloudstream4.desktop.data.WatchProgress
@@ -303,6 +305,29 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         if (!engine.isPlaying) currentSaveProgress()
     }
     DisposableEffect(engine) { onDispose { SleepInhibitor.setActive(false) } }
+
+    // What is playing on the Discord profile, checked every few seconds so seeking moves Discord's time bar too
+    val currentPresence by rememberUpdatedState {
+        val start = System.currentTimeMillis() - engine.timeMs
+        Presence(
+            title = route.media.name,
+            subtitle = if (playable.episode != null) {
+                listOfNotNull(playable.season?.let { tr("S{0} E{1}", it, playable.episode) } ?: tr("Episode {0}", playable.episode), playable.title)
+                    .joinToString(" · ")
+            } else null,
+            posterUrl = playable.posterUrl ?: route.media.posterUrl,
+            playing = engine.isPlaying,
+            startMs = start.takeIf { engine.lengthMs > 0 },
+            endMs = (start + engine.lengthMs).takeIf { engine.lengthMs > 0 },
+        )
+    }
+    LaunchedEffect(engine) {
+        while (true) {
+            DiscordPresence.update(currentPresence())
+            delay(3_000)
+        }
+    }
+    DisposableEffect(engine) { onDispose { DiscordPresence.clear() } }
 
     if (!inPip) {
         val visible = windowState?.isMinimized != true && !AppVisibility.isHidden

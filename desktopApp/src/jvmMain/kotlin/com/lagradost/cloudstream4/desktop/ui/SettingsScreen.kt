@@ -45,6 +45,7 @@ import com.lagradost.cloudstream4.desktop.data.I18n
 import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.Letterboxd
+import com.lagradost.cloudstream4.desktop.data.DiscordPresence
 import com.lagradost.cloudstream4.desktop.data.OperatingSystem
 import com.lagradost.cloudstream4.desktop.data.Sync
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
@@ -298,6 +299,32 @@ fun SettingsScreen() {
                     style = MaterialTheme.typography.bodySmall,
                     color = if (status.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+
+        Section(tr("Discord")) {
+            SwitchRow(
+                tr("Show what you watch on Discord"),
+                tr("Your Discord profile shows the title and episode while the Discord app is open on this computer"),
+                settings.discordPresence,
+            ) { value ->
+                AppData.updateSettings { it.copy(discordPresence = value) }
+                if (!value) DiscordPresence.clear()
+            }
+            if (settings.discordPresence) {
+                OutlinedTextField(
+                    value = settings.discordApplicationId,
+                    onValueChange = { value -> AppData.updateSettings { it.copy(discordApplicationId = value.filter(Char::isDigit)) } },
+                    label = { Text(tr("Discord application ID")) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    tr("Discord shows the name of an application you create: at discord.com/developers/applications, click New Application, name it CloudStream, and paste its Application ID here."),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = { openInBrowser("https://discord.com/developers/applications") }) { Text(tr("Open Discord developer portal")) }
             }
         }
 

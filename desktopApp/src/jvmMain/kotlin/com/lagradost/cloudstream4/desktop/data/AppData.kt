@@ -175,6 +175,10 @@ data class Settings(
     val recommendations: Boolean = true,
     /** A folder shared between computers (iCloud Drive, Dropbox...) to sync the library through, empty is off */
     val syncFolder: String = "",
+    /** Shows what is playing on the Discord profile */
+    val discordPresence: Boolean = false,
+    /** The Discord application whose name Discord shows, from discord.com/developers/applications */
+    val discordApplicationId: String = "",
 )
 
 /** Episodes of a show at the last check, and how many appeared since the user last watched it */
