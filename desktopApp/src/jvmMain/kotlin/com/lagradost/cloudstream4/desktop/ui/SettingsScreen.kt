@@ -337,7 +337,7 @@ fun SettingsScreen() {
 
                 else -> {
                     Text(
-                        tr("Trakt needs an application of your own: at trakt.tv/oauth/applications, click New Application, name it CloudStream, enter urn:ietf:wg:oauth:2.0:oob as the redirect URI, save, and paste its Client ID and Client Secret here."),
+                        tr("Trakt needs an application of your own: at trakt.tv/oauth/applications, click New Application, name it CloudStream, enter http://localhost as the redirect URI, save, and paste its Client ID and Client Secret here."),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

@@ -129,7 +129,7 @@ object Trakt {
             "$HOST/oauth/token",
             json = mapOf(
                 "refresh_token" to account.refreshToken, "client_id" to clientId, "client_secret" to clientSecret,
-                "redirect_uri" to "urn:ietf:wg:oauth:2.0:oob", "grant_type" to "refresh_token",
+                "redirect_uri" to "http://localhost", "grant_type" to "refresh_token",
             ),
         )
         if (!response.isSuccessful) {
