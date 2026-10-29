@@ -179,9 +179,6 @@ data class Settings(
     val discordPresence: Boolean = false,
     /** Another Discord application to show instead of CloudStream's, from discord.com/developers/applications */
     val discordApplicationId: String = "",
-    /** The user's Trakt API application, from trakt.tv/oauth/applications */
-    val traktClientId: String = "",
-    val traktClientSecret: String = "",
     /** Marks what is watched in the player as watched on Trakt */
     val traktScrobble: Boolean = true,
 )

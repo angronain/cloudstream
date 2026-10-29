@@ -39,7 +39,6 @@ sealed interface TraktState {
 /**
  * Trakt (trakt.tv): marks what is watched in the player as watched on Trakt, sends ratings and Plan to watch
  * there and takes Trakt's ratings for the recommendations. Titles are matched by their TMDB id, which Trakt knows.
- * Trakt needs an API application of the user's own, its client id and secret are in the settings.
  */
 object Trakt {
     private const val HOST = "https://api.trakt.tv"
@@ -52,8 +51,8 @@ object Trakt {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
-    private val clientId get() = AppData.settings.value.traktClientId.trim()
-    private val clientSecret get() = AppData.settings.value.traktClientSecret.trim()
+    /** The CloudStream application on Trakt, a public app: signing in with a code needs no client secret */
+    private const val clientId = "4klvCmTI3-ROTN_d7_a5Mhsmx0vZgeh0NTI_mLdYK-o"
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class DeviceCode(
@@ -76,7 +75,6 @@ object Trakt {
         signInJob?.cancel()
         signInJob = scope.launch {
             try {
-                require(clientId.isNotEmpty() && clientSecret.isNotEmpty()) { tr("Enter the client ID and secret of your Trakt application first") }
                 val code = mapper.readValue<DeviceCode>(app.post("$HOST/oauth/device/code", json = mapOf("client_id" to clientId)).text)
                 _state.value = TraktState.WaitingForCode(code.userCode, code.verificationUrl)
                 openUrl(code.verificationUrl)
@@ -85,7 +83,7 @@ object Trakt {
                     delay(code.interval * 1000L)
                     val response = app.post(
                         "$HOST/oauth/device/token",
-                        json = mapOf("code" to code.deviceCode, "client_id" to clientId, "client_secret" to clientSecret),
+                        json = mapOf("code" to code.deviceCode, "client_id" to clientId),
                     )
                     // 400 means the user has not entered the code yet
                     if (response.code == 400) continue
@@ -128,7 +126,7 @@ object Trakt {
         val response = app.post(
             "$HOST/oauth/token",
             json = mapOf(
-                "refresh_token" to account.refreshToken, "client_id" to clientId, "client_secret" to clientSecret,
+                "refresh_token" to account.refreshToken, "client_id" to clientId,
                 "redirect_uri" to "http://localhost", "grant_type" to "refresh_token",
             ),
         )
