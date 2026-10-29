@@ -66,8 +66,8 @@ object Recommendations {
         fun add(name: String, year: Int?, movie: Boolean?, stars: Float?, liked: Boolean, watched: Boolean) {
             val weight = (stars?.let { it - 2.75 } ?: if (watched) 0.75 else 0.0) + if (liked) 1.0 else 0.0
             if (weight == 0.0) return
-            val key = "${name.lowercase()}|${year ?: ""}"
-            // The app's own rating wins over an imported one
+            // One opinion per title, the app's own rating wins over its history and over an imported one
+            val key = name.lowercase()
             if (key !in seeds) seeds[key] = Seed(name, year, movie, weight)
         }
         AppData.ratings.value.values.sortedByDescending { it.updatedAt }.forEach {
@@ -131,10 +131,11 @@ object Recommendations {
                 seed to limit.withPermit { runCatching { Tmdb.recommendations(title) }.onFailure { logError(it) }.getOrDefault(emptyList()) }
             }
         }.awaitAll().forEach { (seed, recommended) ->
-            recommended.forEachIndexed { rank, title ->
+            // Only the closest few, so one favourite does not fill the whole row
+            recommended.take(10).forEachIndexed { rank, title ->
                 if (title.key in known || title.name.lowercase() in knownNames) return@forEachIndexed
                 // TMDB lists the closest titles first
-                val points = seed.weight * (1.0 - rank / 25.0)
+                val points = seed.weight * (1.0 - rank / 12.0)
                 scores[title.key] = (scores[title.key] ?: 0.0) + points
                 titles[title.key] = title
                 if (points > (because[title.key]?.second ?: 0.0)) because[title.key] = seed.name to points
