@@ -169,7 +169,8 @@ android {
         }
         create("prerelease") {
             dimension = "state"
-            applicationIdSuffix = ".prerelease"
+            // Forks can build as their own app, installed next to the official one (-PandroidApplicationIdSuffix=.fork)
+            applicationIdSuffix = (findProperty("androidApplicationIdSuffix") as String?) ?: ".prerelease"
             if (signingConfigs.names.contains("prerelease")) {
                 signingConfig = signingConfigs.getByName("prerelease")
             } else {
