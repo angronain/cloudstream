@@ -1,6 +1,15 @@
 package com.lagradost.cloudstream4.desktop.ui
 
 import com.lagradost.cloudstream4.desktop.data.tr
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.ContextMenuArea
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.background
@@ -127,25 +136,24 @@ fun PosterCard(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val hovered by interaction.collectIsHoveredAsState()
+    val lift by animateFloatAsState(if (hovered) 1.04f else 1f, tween(160))
     ContextMenuArea(items = menu) {
         Column(
             modifier = modifier
                 .width(if (horizontal) width * 1.6f else width)
-                .clip(RoundedCornerShape(10.dp))
                 .hoverable(interaction)
-                .clickable(onClick = onClick)
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 .padding(4.dp)
         ) {
             Box(
                 Modifier
                     .fillMaxWidth()
                     .aspectRatio(if (horizontal) 16f / 9f else 2f / 3f)
-                    .clip(RoundedCornerShape(10.dp))
+                    .graphicsLayer { scaleX = lift; scaleY = lift }
+                    .clip(RoundedCornerShape(12.dp))
+                    .then(if (hovered) Modifier.border(2.dp, MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f), RoundedCornerShape(12.dp)) else Modifier)
             ) {
                 RemoteImage(posterUrl, Modifier.fillMaxSize(), headers, contentDescription = title)
-                if (hovered) {
-                    Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.12f)))
-                }
                 if (isPreparing) {
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color.White)
@@ -163,25 +171,27 @@ fun PosterCard(
                     )
                 }
                 if (progress != null && progress > 0f) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
-                        drawStopIndicator = {},
-                    )
+                    Box(Modifier.fillMaxWidth().height(40.dp).align(Alignment.BottomCenter).background(BottomFade))
+                    Box(
+                        Modifier.align(Alignment.BottomCenter).padding(10.dp).fillMaxWidth().height(3.dp)
+                            .clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.3f))
+                    ) {
+                        Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(Color.White))
+                    }
                 }
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 title,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                fontWeight = if (hovered) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = FontWeight.Medium,
             )
             if (subtitle != null) {
                 Text(
                     subtitle,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -312,11 +322,42 @@ fun formatStars(stars: Float): String = (if (stars % 1f == 0f) stars.toInt().toS
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
     Row(
-        modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier.fillMaxWidth().padding(start = 40.dp, end = 32.dp, top = 28.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f, fill = false))
         trailing()
+    }
+}
+
+/** Rows of cards start on the same 40dp edge as the titles above them, the cards having 4dp of their own */
+val RowPadding = PaddingValues(horizontal = 36.dp)
+
+/** A small "See all" style link beside a section title */
+@Composable
+fun TitleLink(text: String, onClick: () -> Unit) {
+    Text(
+        text,
+        Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelLarge,
+    )
+}
+
+/** Grey cards pulsing where a row is still loading */
+@Composable
+fun PlaceholderRow(cards: Int = 9, horizontal: Boolean = false) {
+    val pulse by rememberInfiniteTransition().animateFloat(0.04f, 0.1f, infiniteRepeatable(tween(900), RepeatMode.Reverse))
+    Column {
+        Box(Modifier.padding(start = 40.dp, top = 32.dp, bottom = 14.dp).width(180.dp).height(20.dp).clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.onBackground.copy(alpha = pulse)))
+        Row(Modifier.padding(RowPadding), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(cards) {
+                Box(Modifier.padding(4.dp).width(if (horizontal) 224.dp else 140.dp).aspectRatio(if (horizontal) 16f / 9f else 2f / 3f)
+                    .clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.onBackground.copy(alpha = pulse)))
+            }
+        }
     }
 }
 
@@ -325,8 +366,8 @@ fun SearchResponseRow(title: String, items: List<SearchResponse>, horizontal: Bo
     Column {
         SectionTitle(title)
         LazyRow(
-            contentPadding = PaddingValues(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = RowPadding,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(items, key = { it.url + it.apiName }) { SearchResponseCard(it, horizontal) }
         }

@@ -472,7 +472,7 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
             response.recommendations?.takeIf { it.isNotEmpty() }?.let { recommendations ->
                 item {
                     Spacer(Modifier.height(24.dp))
-                    Box(Modifier.padding(horizontal = 24.dp)) { SearchResponseRow(tr("More like this"), recommendations) }
+                    SearchResponseRow(tr("More like this"), recommendations)
                 }
             }
             item { Spacer(Modifier.height(48.dp)) }

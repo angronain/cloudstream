@@ -167,13 +167,13 @@ fun SearchScreen(viewModel: SearchViewModel) {
             return
         }
 
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
             items(state.results, key = { it.provider }) { result ->
                 when {
                     result.items.isNotEmpty() -> SearchResponseRow(result.provider, result.items)
                     else -> Text(
                         "${result.provider}: ${result.error ?: tr("No results")}",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 40.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )

@@ -1,6 +1,18 @@
 package com.lagradost.cloudstream4.desktop.ui
 
 import com.lagradost.cloudstream4.desktop.data.tr
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
+import com.lagradost.cloudstream4.desktop.generated.resources.close
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -110,6 +122,8 @@ import com.lagradost.cloudstream4.desktop.player.ActivePlayback
 import com.lagradost.cloudstream4.desktop.player.AppVisibility
 import com.lagradost.cloudstream4.desktop.player.ExternalPlayer
 import com.lagradost.cloudstream4.desktop.player.SleepInhibitor
+import com.lagradost.cloudstream4.desktop.player.NowPlaying
+import com.lagradost.cloudstream4.desktop.player.NowPlayingControls
 import com.lagradost.cloudstream4.desktop.player.Vlc
 import com.lagradost.cloudstream4.desktop.player.VlcEngine
 import java.awt.Cursor
@@ -226,8 +240,20 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         val preferred = AppData.audioPreference(route.media.url) ?: return@LaunchedEffect
         pickAudioTrack(engine.audioTracks, preferred)?.takeIf { it.id != engine.audioTrack }?.let { engine.selectAudio(it.id) }
     }
+    // A source that fails moves on to the next one, saying so for a few seconds
+    var sourceNotice by remember { mutableStateOf<String?>(null) }
+    fun fallBack() {
+        val failed = viewModel.state.value.selectedLink?.label() ?: return
+        if (!viewModel.nextLink()) return
+        val next = viewModel.state.value.selectedLink?.label()
+        sourceNotice = if (next != null) tr("{0} did not play, trying {1}", failed, next) else tr("{0} did not play, waiting for more links", failed)
+        scope.launch {
+            delay(6_000)
+            sourceNotice = null
+        }
+    }
     LaunchedEffect(engine.hasError) {
-        if (engine.hasError) viewModel.nextLink()
+        if (engine.hasError) fallBack()
     }
     // A stalled stream never reports an error, it just buffers forever: move on when the time stops advancing
     LaunchedEffect(state.selectedLink) {
@@ -250,7 +276,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 stalledSeconds++
             }
             if (stalledSeconds >= if (started) STALL_MID_PLAYBACK_SECONDS else STALL_START_SECONDS) {
-                viewModel.nextLink()
+                fallBack()
                 break
             }
         }
@@ -329,6 +355,34 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         }
     }
     DisposableEffect(engine) { onDispose { DiscordPresence.clear() } }
+
+    // macOS's Now Playing and the media keys
+    val currentPlayNext by rememberUpdatedState(if (hasNext) playNext else null)
+    LaunchedEffect(engine) {
+        while (true) {
+            val episode = playable.episode?.let { e -> playable.season?.let { tr("S{0} E{1}", it, e) } ?: tr("Episode {0}", e) }
+            NowPlaying.update(
+                title = route.media.name,
+                subtitle = if (playable.episode != null) listOfNotNull(episode, playable.title.takeIf { it != route.media.name }).joinToString(" · ") else null,
+                positionMs = engine.timeMs,
+                durationMs = engine.lengthMs,
+                playing = engine.isPlaying,
+                hasNext = currentPlayNext != null,
+            )
+            delay(2_000)
+        }
+    }
+    DisposableEffect(engine) {
+        NowPlaying.controls = object : NowPlayingControls {
+            override fun play() = engine.setPaused(false)
+            override fun pause() = engine.setPaused(true)
+            override fun togglePause() = engine.togglePause()
+            override fun next() { currentPlayNext?.invoke() }
+            override fun skip(ms: Long) = engine.skip(ms)
+            override fun seekTo(ms: Long) = engine.seekTo(ms)
+        }
+        onDispose { NowPlaying.clear() }
+    }
 
     // Trakt marks the episode or movie as watched when playback stops past 80%
     fun traktProgress() = if (engine.lengthMs > 0) engine.timeMs.toFloat() / engine.lengthMs else 0f
@@ -508,11 +562,12 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         if (showShortcuts) {
             Surface(
                 Modifier.align(Alignment.Center).clickable { showShortcuts = false },
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Black.copy(alpha = 0.85f),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xF0101014),
             ) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(tr("Keyboard shortcuts"), color = Color.White, style = MaterialTheme.typography.titleMedium)
+                Column(Modifier.padding(28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(tr("Keyboard shortcuts"), color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 6.dp))
                     listOf(
                         tr("Space or K") to tr("Play / pause"),
                         tr("← or J, → or L") to tr("Back / forward {0}s", settings.seekSeconds),
@@ -525,7 +580,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         "?" to tr("Show or hide this list"),
                     ).forEach { (keys, action) ->
                         Row {
-                            Text(keys, color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.width(160.dp))
+                            Text(keys, color = Color.White, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(170.dp))
                             Text(action, color = Color.White.copy(alpha = 0.8f))
                         }
                     }
@@ -552,26 +607,40 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 label,
                 color = Color.White,
                 style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 88.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50))
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
+            )
+        }
+
+        sourceNotice?.let { notice ->
+            Text(
+                notice,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = if (swipeLabel != null) 148.dp else 88.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(50))
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
             )
         }
 
         if (state.selectedLink == null || engine.isBuffering) {
-            Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (state.error == null) CircularProgressIndicator(color = Color.White)
-                Spacer(Modifier.height(12.dp))
+            Column(Modifier.align(Alignment.Center).widthIn(max = 520.dp).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (state.error == null) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp)
+                Spacer(Modifier.height(16.dp))
                 Text(
                     when {
                         state.error != null -> state.error!!
                         state.selectedLink == null -> tr("Loading links ({0} found)", state.links.size)
                         else -> tr("Buffering {0}", state.selectedLink?.label())
                     },
-                    color = Color.White,
+                    color = Color.White.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center,
                 )
                 if (state.error != null) {
-                    TextButton(onClick = viewModel::loadLinks) { Text(tr("Retry")) }
+                    Spacer(Modifier.height(16.dp))
+                    PrimaryPill(tr("Retry"), Res.drawable.replay, false, viewModel::loadLinks)
                 }
             }
         }
@@ -579,33 +648,37 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         val remainingMs = engine.lengthMs - engine.timeMs
         val showNextUp = hasNext && !nextCancelled && engine.lengthMs > NEXT_UP_MS * 4 && remainingMs in 1..NEXT_UP_MS
         skipStamps.firstOrNull { engine.timeMs in it.startMs until it.endMs - 1_000 }?.let { stamp ->
-            Button(
-                onClick = {
+            // Above the next episode card when both show
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = if (showNextUp) 300.dp else 140.dp)) {
+                PrimaryPill(stamp.label, Res.drawable.skip_next, false) {
                     focus.requestFocus()
                     engine.seekTo(stamp.endMs)
-                },
-                // Above the next episode card when both show
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = if (showNextUp) 260.dp else 120.dp),
-            ) { Text(stamp.label) }
+                }
+            }
         }
 
         if (showNextUp) {
-            Surface(
-                Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 120.dp).widthIn(max = 320.dp),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Black.copy(alpha = 0.8f),
+            val next = route.playlist[route.index + 1]
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(end = 32.dp, bottom = 140.dp).widthIn(max = 460.dp)
+                    .clip(RoundedCornerShape(16.dp)).background(Color(0xE6101014)).padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(tr("Next episode in {0}s", (remainingMs + 999) / 1000), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
-                    Text(route.playlist[route.index + 1].title, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
+                (next.posterUrl ?: playable.posterUrl ?: route.media.posterUrl)?.let { thumb ->
+                    RemoteImage(thumb, Modifier.width(150.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)), route.media.posterHeaders)
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(tr("Next episode in {0}s", (remainingMs + 999) / 1000), color = Color.White.copy(alpha = 0.65f), style = MaterialTheme.typography.labelMedium)
+                    Text(next.title, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PrimaryPill(tr("Play now"), Res.drawable.play, false) {
                             // The button goes away, the keyboard shortcuts need the player focused again
                             focus.requestFocus()
                             saveProgress()
                             playNext()
-                        }) { Text(tr("Play now")) }
-                        TextButton(onClick = { nextCancelled = true; focus.requestFocus() }) { Text(tr("Cancel"), color = Color.White) }
+                        }
+                        GhostPill(tr("Cancel"), Res.drawable.close) { nextCancelled = true; focus.requestFocus() }
                     }
                 }
             }
@@ -614,44 +687,56 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         AnimatedVisibility(controlsVisible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize()) {
                 Row(
-                    Modifier.fillMaxWidth().background(BottomFadeReversed).padding(12.dp),
+                    Modifier.fillMaxWidth().background(BottomFadeReversed).padding(horizontal = 24.dp, vertical = 20.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    IconButton(onClick = { navigator.back() }) {
-                        Icon(painterResource(Res.drawable.arrow_back), tr("Back"), tint = Color.White)
-                    }
+                    RoundControl(Res.drawable.arrow_back, tr("Back")) { navigator.back() }
                     Column(Modifier.weight(1f)) {
-                        Text(playable.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        state.selectedLink?.let {
-                            Text(it.label(), color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodySmall)
+                        val episode = playable.episode?.let { e -> playable.season?.let { tr("S{0} E{1}", it, e) } ?: tr("Episode {0}", e) }
+                        if (playable.title != route.media.name) {
+                            Text(
+                                listOfNotNull(route.media.name, episode).joinToString("  ·  "),
+                                color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
                         }
+                        Text(playable.title, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    state.selectedLink?.let {
+                        Text(
+                            it.label(), color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                            modifier = Modifier.widthIn(max = 280.dp).background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(50)).padding(horizontal = 12.dp, vertical = 6.dp),
+                        )
                     }
                 }
 
-                Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(BottomFade).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(BottomFade).padding(start = 24.dp, end = 24.dp, top = 48.dp, bottom = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     var dragging by remember { mutableStateOf<Float?>(null) }
                     val progress = if (engine.lengthMs > 0) engine.timeMs.toFloat() / engine.lengthMs else 0f
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(formatTime(dragging?.let { (it * engine.lengthMs).toLong() } ?: engine.timeMs), color = Color.White)
-                        Slider(
-                            value = dragging ?: progress,
-                            onValueChange = {
-                                dragging = it
-                                lastInteraction = System.currentTimeMillis()
-                            },
-                            onValueChangeFinished = {
-                                dragging?.let { engine.seekTo((it * engine.lengthMs).toLong()) }
-                                dragging = null
-                                focus.requestFocus()
-                            },
-                            enabled = engine.lengthMs > 0,
-                            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = MaterialTheme.colorScheme.primary),
-                            modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                        )
-                        Text(formatTime(engine.lengthMs), color = Color.White)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ControlButton(if (engine.isPlaying) Res.drawable.pause else Res.drawable.play, tr("Play/Pause")) { engine.togglePause() }
+                    SeekBar(
+                        fraction = dragging ?: progress,
+                        lengthMs = engine.lengthMs,
+                        onDrag = {
+                            dragging = it
+                            lastInteraction = System.currentTimeMillis()
+                        },
+                        onRelease = {
+                            dragging?.let { engine.seekTo((it * engine.lengthMs).toLong()) }
+                            dragging = null
+                            focus.requestFocus()
+                        },
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Box(
+                            Modifier.size(48.dp).clip(RoundedCornerShape(50)).background(Color.White).clickable { engine.togglePause(); focus.requestFocus() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(painterResource(if (engine.isPlaying) Res.drawable.pause else Res.drawable.play), tr("Play/Pause"), tint = Color.Black, modifier = Modifier.size(28.dp))
+                        }
+                        Spacer(Modifier.width(6.dp))
                         ControlButton(Res.drawable.replay, tr("Back {0}s", settings.seekSeconds)) { engine.skip(-seekMs) }
                         ControlButton(Res.drawable.forward, tr("Forward {0}s", settings.seekSeconds)) { engine.skip(seekMs) }
                         if (hasNext) ControlButton(Res.drawable.skip_next, tr("Next episode")) { playNext() }
@@ -661,10 +746,14 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         Slider(
                             value = engine.volume / 200f,
                             onValueChange = { engine.changeVolume((it * 200).toInt()) },
-                            colors = SliderDefaults.colors(thumbColor = Color.White),
-                            modifier = Modifier.width(120.dp),
+                            colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
+                            modifier = Modifier.width(110.dp),
                         )
-                        Text("${engine.volume}%", color = Color.White, style = MaterialTheme.typography.bodySmall)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "${formatTime(dragging?.let { (it * engine.lengthMs).toLong() } ?: engine.timeMs)} / ${formatTime(engine.lengthMs)}",
+                            color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelLarge,
+                        )
                         Spacer(Modifier.weight(1f))
 
                         MenuButton(Res.drawable.sources, tr("Sources ({0})", state.links.size), openMenus) { close ->
@@ -829,13 +918,81 @@ private const val SWIPE_SEEK_MS_PER_UNIT = 1_000f
 private const val SWIPE_VOLUME_PER_UNIT = 1f
 
 private val BottomFadeReversed = Brush.verticalGradient(
-    listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
+    listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent)
 )
 
 @Composable
 private fun ControlButton(icon: DrawableResource, description: String, onClick: () -> Unit) {
     IconButton(onClick = onClick) {
-        Icon(painterResource(icon), description, tint = Color.White)
+        Icon(painterResource(icon), description, tint = Color.White, modifier = Modifier.size(26.dp))
+    }
+}
+
+/** A round see-through button, like the back button over the video */
+@Composable
+private fun RoundControl(icon: DrawableResource, description: String, onClick: () -> Unit) {
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.14f)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(icon), description, tint = Color.White, modifier = Modifier.size(22.dp))
+    }
+}
+
+/** A thin line across the bottom, thicker under the mouse with the time it points at */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun SeekBar(fraction: Float, lengthMs: Long, onDrag: (Float) -> Unit, onRelease: () -> Unit) {
+    var widthPx by remember { mutableIntStateOf(1) }
+    var hoverX by remember { mutableStateOf<Float?>(null) }
+    var pressed by remember { mutableStateOf(false) }
+    val active = hoverX != null || pressed
+    val thickness by animateDpAsState(if (active) 6.dp else 4.dp)
+    val enabled = lengthMs > 0
+    fun at(x: Float) = (x / widthPx).coerceIn(0f, 1f)
+    Box(
+        Modifier.fillMaxWidth().height(22.dp)
+            .onSizeChanged { widthPx = it.width.coerceAtLeast(1) }
+            .onPointerEvent(PointerEventType.Move) { hoverX = it.changes.first().position.x }
+            .onPointerEvent(PointerEventType.Exit) { hoverX = null }
+            .pointerHoverIcon(if (enabled) PointerIcon.Hand else PointerIcon.Default)
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    pressed = true
+                    onDrag(at(down.position.x))
+                    drag(down.id) { change ->
+                        hoverX = change.position.x
+                        onDrag(at(change.position.x))
+                    }
+                    pressed = false
+                    onRelease()
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        Box(Modifier.fillMaxWidth().height(thickness).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.25f))) {
+            hoverX?.let { x -> Box(Modifier.fillMaxHeight().fillMaxWidth(at(x)).background(Color.White.copy(alpha = 0.2f))) }
+            Box(Modifier.fillMaxHeight().fillMaxWidth(fraction.coerceIn(0f, 1f)).background(MaterialTheme.colorScheme.primary))
+        }
+        if (active && enabled) {
+            val density = LocalDensity.current
+            Box(
+                Modifier.offset(x = with(density) { (fraction.coerceIn(0f, 1f) * widthPx).toDp() } - 7.dp)
+                    .size(14.dp).clip(RoundedCornerShape(50)).background(Color.White)
+            )
+        }
+        val x = hoverX
+        if (x != null && enabled && !pressed) {
+            val density = LocalDensity.current
+            Text(
+                formatTime((at(x) * lengthMs).toLong()),
+                color = Color.White, style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.offset(x = with(density) { x.toDp() } - 24.dp, y = (-28).dp)
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+            )
+        }
     }
 }
 
@@ -852,11 +1009,15 @@ private fun MenuButton(
         if (expanded) openMenus.intValue++
         onDispose { if (expanded) openMenus.intValue-- }
     }
-    Box {
-        TextButton(onClick = { expanded = true }) {
-            Icon(painterResource(icon), null, tint = Color.White, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(description, color = Color.White)
+    Box(Modifier.padding(horizontal = 3.dp)) {
+        Row(
+            Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = if (expanded) 0.24f else 0.12f))
+                .clickable { expanded = true }.padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(painterResource(icon), null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Text(description, color = Color.White, style = MaterialTheme.typography.labelLarge)
         }
         DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
             content { expanded = false }

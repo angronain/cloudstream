@@ -3,6 +3,12 @@ package com.lagradost.cloudstream4.desktop.ui
 import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.draw.clip
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.height
@@ -21,11 +27,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -233,7 +236,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
             if (withNew.isNotEmpty()) {
                 item {
                     SectionTitle(tr("New episodes"))
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    LazyRow(contentPadding = RowPadding, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(withNew, key = { it.media.url }) { progress ->
                             val count = episodeChecks[progress.media.url]?.newCount ?: 0
                             ContinueWatchingCard(
@@ -250,7 +253,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
             if (watching.isNotEmpty()) {
                 item {
                     SectionTitle(tr("Continue watching"))
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    LazyRow(contentPadding = RowPadding, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(watching.take(20), key = { it.media.url }) { progress ->
                             ContinueWatchingCard(progress, progress.episodeData?.let { positions[it]?.fraction })
                         }
@@ -261,7 +264,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
             if (suggested.isNotEmpty()) {
                 item {
                     SectionTitle(tr("Recommended for you"))
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    LazyRow(contentPadding = RowPadding, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(suggested, key = { it.title.key }) { RecommendationCard(it) }
                     }
                 }
@@ -269,54 +272,27 @@ fun HomeScreen(viewModel: HomeViewModel) {
 
             if (bookmarks.isNotEmpty()) {
                 item {
-                    SectionTitle(tr("My list")) {
-                        TextButton(onClick = { navigator.select(Tab.Library) }) { Text(tr("See all")) }
-                    }
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                    SectionTitle(tr("My list")) { TitleLink(tr("See all")) { navigator.select(Tab.Library) } }
+                    LazyRow(contentPadding = RowPadding, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(bookmarks.take(20), key = { it.url }) { MediaEntryCard(it) }
                     }
                 }
             }
 
             if (providers.isNotEmpty()) {
-                item {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(tr("From"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp))
-                        var expanded by remember { mutableStateOf(false) }
-                        Box {
-                            OutlinedButton(onClick = { expanded = true }) {
-                                Text(state.provider ?: tr("Select provider"))
-                                Spacer(Modifier.width(4.dp))
-                                Icon(painterResource(Res.drawable.arrow_down), null)
-                            }
-                            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
-                                providers.sortedBy { it.name.lowercase() }.forEach { api ->
-                                    DropdownMenuItem(
-                                        text = { Text("${api.name}  ·  ${api.lang}") },
-                                        onClick = {
-                                            expanded = false
-                                            viewModel.select(api.name)
-                                        },
-                                    )
-                                }
-                            }
-                        }
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = viewModel::load) { Icon(painterResource(Res.drawable.refresh), tr("Reload")) }
-                    }
-                    if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                }
+                item { SourceHeader(state, providers, viewModel) }
+            }
+
+            // Grey rows while nothing of this source is in yet
+            if (state.isLoading && state.rows.isEmpty() && state.cached.isEmpty()) {
+                items(3) { PlaceholderRow(horizontal = it == 1) }
             }
 
             // The saved rows stand in until the provider has returned as many
             if (state.rows.size < state.cached.size) {
                 items(state.cached, key = { "cached" + it.name + it.items.firstOrNull()?.url }) { row ->
                     SectionTitle(row.name)
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LazyRow(contentPadding = RowPadding, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(row.items, key = { it.url + it.apiName }) {
                             MediaEntryCard(it, subtitle = it.type?.name ?: "", horizontal = row.horizontal)
                         }
@@ -338,6 +314,51 @@ fun HomeScreen(viewModel: HomeViewModel) {
                     )
                 }
             }
+        }
+    }
+}
+
+/** The rows' source: "From" and a pill choosing it, with a reload button */
+@Composable
+private fun SourceHeader(state: HomeState, providers: List<MainAPI>, viewModel: HomeViewModel) {
+    val content = MaterialTheme.colorScheme.onBackground
+    Row(
+        Modifier.fillMaxWidth().padding(start = 40.dp, end = 32.dp, top = 40.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(tr("From"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        var expanded by remember { mutableStateOf(false) }
+        Box {
+            Row(
+                Modifier.clip(RoundedCornerShape(50)).background(content.copy(alpha = 0.08f)).clickable { expanded = true }
+                    .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(state.provider ?: tr("Select provider"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Icon(painterResource(Res.drawable.arrow_down), null, Modifier.size(20.dp))
+            }
+            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                providers.sortedBy { it.name.lowercase() }.forEach { api ->
+                    DropdownMenuItem(
+                        text = { Text("${api.name}  ·  ${api.lang}") },
+                        onClick = {
+                            expanded = false
+                            viewModel.select(api.name)
+                        },
+                    )
+                }
+            }
+        }
+        if (state.isLoading) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = content.copy(alpha = 0.6f))
+        } else {
+            Icon(
+                painterResource(Res.drawable.refresh), tr("Reload"),
+                Modifier.size(34.dp).clip(RoundedCornerShape(50)).clickable(onClick = viewModel::load).padding(7.dp),
+                tint = content.copy(alpha = 0.7f),
+            )
         }
     }
 }
