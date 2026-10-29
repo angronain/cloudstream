@@ -180,29 +180,23 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
     val errors by PluginManager.errors.collectAsState()
     var input by remember { mutableStateOf("") }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 40.dp, vertical = 16.dp)) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(tr("Extensions"), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+            PageHeader(tr("Extensions"), tr("{0} installed · {1} providers loaded", plugins.size, PluginManager.providers().size)) {
                 OutlinedButton(onClick = { viewModel.showSettings(true) }) { Text(tr("Extension settings")) }
-                Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = viewModel::updateAll, enabled = !state.isUpdating && plugins.isNotEmpty()) {
                     Icon(painterResource(Res.drawable.update), null)
                     Spacer(Modifier.width(6.dp))
                     Text(if (state.isUpdating) tr("Updating...") else tr("Update all"))
                 }
             }
-            Text(
-                "${plugins.size} installed · ${PluginManager.providers().size} providers loaded",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },
-                    label = { Text(tr("Repository URL or shortcode")) },
+                    placeholder = { Text(tr("Repository URL or shortcode")) },
                     singleLine = true,
+                    shape = RoundedCornerShape(50),
                     modifier = Modifier.weight(1f).onEnter { viewModel.addRepository(input).also { input = "" } },
                 )
                 Spacer(Modifier.width(12.dp))
@@ -242,20 +236,19 @@ private fun RepositoryList(viewModel: ExtensionsViewModel, state: ExtensionsStat
         items(repositories, key = { it.url }) { repo ->
             val count = plugins.count { it.repositoryUrl == repo.url }
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                Modifier.fillMaxWidth().padding(vertical = 4.dp).softCard()
                     .clickable { viewModel.open(repo) }
-                    .padding(12.dp),
+                    .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RemoteImage(repo.iconUrl, Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)))
+                RemoteImage(repo.iconUrl, Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(repo.name, style = MaterialTheme.typography.titleMedium)
+                    Text(repo.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(repo.url, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text("$count installed", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("{0} installed", count), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 IconButton(onClick = { viewModel.removeRepository(repo) }) {
                     Icon(painterResource(Res.drawable.delete), tr("Remove repository"))
                 }
@@ -276,31 +269,35 @@ private fun RepositoryDetails(viewModel: ExtensionsViewModel, state: ExtensionsS
             (query.isBlank() || it.name.contains(query, ignoreCase = true) || it.description?.contains(query, true) == true)
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { viewModel.open(null) }) { Icon(painterResource(Res.drawable.arrow_back), tr("Back")) }
-            Column(Modifier.weight(1f)) {
-                Text(repo.name, style = MaterialTheme.typography.headlineSmall)
-                data.repository?.description?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 16.dp)) {
+        Row(verticalAlignment = Alignment.Top) {
+            IconButton(onClick = { viewModel.open(null) }, modifier = Modifier.padding(end = 8.dp)) { Icon(painterResource(Res.drawable.arrow_back), tr("Back")) }
+            Box(Modifier.weight(1f)) {
+                PageHeader(repo.name, data.repository?.description) {
+                    OutlinedButton(onClick = { viewModel.installAll(repo) }, enabled = !data.isLoading) { Text(tr("Install all")) }
+                }
             }
-            OutlinedButton(onClick = { viewModel.installAll(repo) }, enabled = !data.isLoading) { Text(tr("Install all")) }
         }
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(query, { query = it }, label = { Text(tr("Filter")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(
+            query, { query = it }, placeholder = { Text(tr("Filter")) }, singleLine = true,
+            shape = RoundedCornerShape(50), modifier = Modifier.fillMaxWidth(),
+        )
         if (languages.size > 1) {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier.padding(vertical = 8.dp),
+                modifier = Modifier.padding(vertical = 12.dp),
             ) {
-                item { FilterChip(language == null, { language = null }, label = { Text(tr("All")) }) }
-                items(languages) { lang -> FilterChip(language == lang, { language = lang }, label = { Text(lang) }) }
+                item { ChoicePill(tr("All"), language == null) { language = null } }
+                items(languages) { lang -> ChoicePill(lang, language == lang) { language = lang } }
             }
+        } else {
+            Spacer(Modifier.height(12.dp))
         }
 
         when {
             data.isLoading -> LoadingBox(tr("Loading extensions"))
             data.error != null -> MessageBox(data.error, action = tr("Retry") to { viewModel.refresh(repo) })
-            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
                 items(shown, key = { it.internalName }) { plugin ->
                     val installed = plugins.firstOrNull {
                         it.filePath == PluginManager.pluginFile(repo.url, plugin.internalName).absolutePath
@@ -327,14 +324,14 @@ private fun PluginRow(
     onUninstall: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp),
+        Modifier.fillMaxWidth().softCard().padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RemoteImage(plugin.icon(), Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)))
+        RemoteImage(plugin.icon(), Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(plugin.name, style = MaterialTheme.typography.titleMedium)
+                Text(plugin.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("v${plugin.version}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 plugin.language?.let { Pill(it) }
                 when (plugin.status) {
@@ -348,7 +345,7 @@ private fun PluginRow(
                 Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
             val details = listOfNotNull(
-                plugin.authors.takeIf { it.isNotEmpty() }?.joinToString(prefix = "By "),
+                plugin.authors.takeIf { it.isNotEmpty() }?.joinToString().let { tr("By {0}", it) },
                 plugin.tvTypes?.takeIf { it.isNotEmpty() }?.joinToString(),
             )
             if (details.isNotEmpty()) {

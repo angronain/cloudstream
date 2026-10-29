@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream4.desktop.downloads.DownloadItem
@@ -56,12 +57,8 @@ private fun formatBytes(bytes: Long): String = when {
 fun DownloadsScreen() {
     val downloads by DownloadManager.downloads.collectAsState()
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(tr("Downloads"), style = MaterialTheme.typography.headlineMedium)
-                Text(DownloadManager.directory.absolutePath, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+    Column(Modifier.fillMaxSize().padding(horizontal = 40.dp, vertical = 16.dp)) {
+        PageHeader(tr("Downloads"), DownloadManager.directory.absolutePath) {
             OutlinedButton(onClick = {
                 DownloadManager.directory.mkdirs()
                 runCatching { Desktop.getDesktop().open(DownloadManager.directory) }
@@ -75,16 +72,29 @@ fun DownloadsScreen() {
             return
         }
         LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-            contentPadding = PaddingValues(vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            // Grouped by show, newest first
+            // One panel per show, newest first
             val groups = downloads.groupBy { it.media.url }
-            groups.forEach { (_, items) ->
-                item(key = "header" + items.first().media.url) {
-                    Text(items.first().media.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+            groups.forEach { (url, items) ->
+                item(key = url) {
+                    val media = items.first().media
+                    Column(Modifier.fillMaxWidth().softCard().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                            RemoteImage(media.posterUrl, Modifier.width(40.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(6.dp)), media.posterHeaders)
+                            Spacer(Modifier.width(12.dp))
+                            Column {
+                                Text(media.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    if (items.size == 1) media.apiName else "${items.size} · ${media.apiName}",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        items.sortedWith(compareBy({ it.season }, { it.episode })).forEach { DownloadRow(it) }
+                    }
                 }
-                items(items.sortedWith(compareBy({ it.season }, { it.episode })), key = { it.id }) { DownloadRow(it) }
             }
         }
     }
@@ -97,17 +107,17 @@ private fun DownloadRow(item: DownloadItem) {
     fun play() = navigator.push(Route.Player(item.media, listOf(playable), 0))
 
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
             .clickable(enabled = item.status == DownloadStatus.Completed) { play() }
-            .padding(10.dp),
+            .padding(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(110.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
+        Box(Modifier.width(140.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
             RemoteImage(item.media.posterUrl, Modifier.fillMaxSize(), item.media.posterHeaders)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val detail = when (item.status) {
                 DownloadStatus.Queued -> tr("Waiting")
                 DownloadStatus.Downloading -> if (item.totalBytes == 0L && item.segmentsTotal == 0) tr("Finding links...")

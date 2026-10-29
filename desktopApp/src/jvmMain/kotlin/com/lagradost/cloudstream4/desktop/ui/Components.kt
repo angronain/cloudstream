@@ -410,3 +410,22 @@ fun ChoicePill(text: String, selected: Boolean, onClick: () -> Unit) {
         maxLines = 1,
     )
 }
+
+/** The faint rounded panel the pages group their content in */
+@Composable
+fun Modifier.softCard(): Modifier =
+    clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.05f))
+
+/** A page's title, with what it shows under it and its buttons on the right */
+@Composable
+fun PageHeader(title: String, subtitle: String? = null, actions: @Composable () -> Unit = {}) {
+    Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) { actions() }
+    }
+}
