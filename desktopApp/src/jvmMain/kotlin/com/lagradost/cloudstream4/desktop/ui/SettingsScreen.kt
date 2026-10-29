@@ -45,6 +45,8 @@ import com.lagradost.cloudstream4.desktop.data.I18n
 import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.Letterboxd
+import com.lagradost.cloudstream4.desktop.data.OperatingSystem
+import com.lagradost.cloudstream4.desktop.data.Sync
 import com.lagradost.cloudstream4.desktop.data.PlayerKind
 import com.lagradost.cloudstream4.desktop.downloads.DownloadManager
 import com.lagradost.cloudstream4.desktop.player.ExternalPlayer
@@ -261,6 +263,44 @@ fun SettingsScreen() {
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
 
+        Section(tr("Sync")) {
+            val window = LocalMainWindow.current
+            val status by Sync.status.collectAsState()
+            Text(
+                tr("Keeps bookmarks, lists, ratings, history and watched progress the same on your computers. Pick a folder that iCloud Drive, Dropbox, Google Drive or OneDrive syncs, and the same folder on each computer."),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (settings.syncFolder.isNotBlank()) Text(settings.syncFolder, style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(onClick = {
+                    val folder = chooseFolder(window, tr("Sync folder")) ?: return@TextButton
+                    AppData.updateSettings { it.copy(syncFolder = folder.absolutePath) }
+                    Sync.start()
+                }) { Text(if (settings.syncFolder.isBlank()) tr("Choose folder") else tr("Change folder")) }
+                if (settings.syncFolder.isNotBlank()) {
+                    TextButton(onClick = Sync::syncNow) { Text(tr("Sync now")) }
+                    TextButton(onClick = {
+                        AppData.updateSettings { it.copy(syncFolder = "") }
+                        Sync.start()
+                    }) { Text(tr("Stop syncing")) }
+                }
+            }
+            if (settings.syncFolder.isNotBlank()) {
+                val text = when {
+                    status.error != null -> tr("Could not sync: {0}", status.error)
+                    status.lastSync == 0L -> tr("Syncing…")
+                    status.devices.isEmpty() -> tr("Synced, no other computer in this folder yet")
+                    else -> tr("Synced with {0}", status.devices.joinToString { it.name })
+                }
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (status.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
         Section(tr("Storage")) {
             Text(tr("Data folder: {0}", AppDirs.dataDir.absolutePath), style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = { runCatching { Desktop.getDesktop().open(AppDirs.dataDir) } }) { Text(tr("Open data folder")) }
@@ -372,4 +412,22 @@ fun SettingsScreen() {
         }
         Spacer(Modifier.height(32.dp))
     }
+}
+
+/** A folder picker, the native one on macOS */
+private fun chooseFolder(window: java.awt.Frame?, title: String): File? {
+    if (AppDirs.os == OperatingSystem.MacOS) {
+        System.setProperty("apple.awt.fileDialogForDirectories", "true")
+        try {
+            val dialog = FileDialog(window, title, FileDialog.LOAD).apply { isVisible = true }
+            return dialog.file?.let { File(dialog.directory, it) }
+        } finally {
+            System.setProperty("apple.awt.fileDialogForDirectories", "false")
+        }
+    }
+    val chooser = javax.swing.JFileChooser().apply {
+        dialogTitle = title
+        fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+    }
+    return if (chooser.showOpenDialog(window) == javax.swing.JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
 }

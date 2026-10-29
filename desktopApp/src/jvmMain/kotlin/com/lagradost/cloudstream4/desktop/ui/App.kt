@@ -41,6 +41,7 @@ import com.lagradost.cloudstream4.desktop.generated.resources.library
 import com.lagradost.cloudstream4.desktop.generated.resources.search
 import com.lagradost.cloudstream4.desktop.generated.resources.settings
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.Sync
 import com.lagradost.cloudstream4.desktop.plugins.PluginManager
 import com.lagradost.cloudstream4.desktop.update.UpdateState
 import com.lagradost.cloudstream4.desktop.update.Updater
@@ -74,6 +75,7 @@ fun App(navigator: Navigator) {
 
     var loadingPlugins by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
+        Sync.start()
         PluginManager.loadAll()
         loadingPlugins = false
         val failed = PluginManager.errors.value.size

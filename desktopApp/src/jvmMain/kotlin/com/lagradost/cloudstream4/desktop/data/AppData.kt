@@ -173,6 +173,8 @@ data class Settings(
     val newEpisodeChecks: Boolean = true,
     /** A home row of titles like the ones the user rated, liked or watched, found on TMDB */
     val recommendations: Boolean = true,
+    /** A folder shared between computers (iCloud Drive, Dropbox...) to sync the library through, empty is off */
+    val syncFolder: String = "",
 )
 
 /** Episodes of a show at the last check, and how many appeared since the user last watched it */
@@ -180,6 +182,21 @@ data class EpisodeCheck(
     val count: Int,
     val newCount: Int = 0,
     val checkedAt: Long = System.currentTimeMillis(),
+)
+
+/** What one computer writes to the sync folder */
+data class SyncSnapshot(
+    val device: String,
+    val deviceName: String,
+    val savedAt: Long,
+    val bookmarks: List<MediaEntry> = emptyList(),
+    val watchLists: Map<String, WatchList> = emptyMap(),
+    val ratings: Map<String, Rating> = emptyMap(),
+    val history: List<WatchProgress> = emptyList(),
+    val positions: Map<String, Position> = emptyMap(),
+    val importedRatings: Map<String, ImportedRating> = emptyMap(),
+    val dismissedRecommendations: Set<String> = emptySet(),
+    val changes: Map<String, Long> = emptyMap(),
 )
 
 /**
@@ -232,6 +249,7 @@ object AppData {
 
     fun toggleBookmark(entry: MediaEntry) {
         val removing = isBookmarked(entry.url)
+        changed("bookmark:" + entry.url)
         _bookmarks.persist("bookmarks") { list ->
             if (removing) list.filterNot { it.url == entry.url } else listOf(entry) + list
         }
@@ -246,6 +264,7 @@ object AppData {
 
     /** Bookmarks [entry] if needed and moves it to [list] */
     fun setWatchList(entry: MediaEntry, list: WatchList) {
+        changed("bookmark:" + entry.url)
         if (!isBookmarked(entry.url)) _bookmarks.persist("bookmarks") { listOf(entry) + it }
         _watchLists.persist("watchLists") { it + (entry.url to list) }
     }
@@ -336,7 +355,7 @@ object AppData {
 
     private fun updateRating(entry: MediaEntry, year: Int?, change: (Rating) -> Rating) = _ratings.persist("ratings") { map ->
         val next = change(map[entry.url] ?: Rating(entry, year = year)).copy(media = entry, year = year ?: map[entry.url]?.year, updatedAt = System.currentTimeMillis())
-        if (next.stars == null && !next.liked) map - entry.url else map + (entry.url to next)
+        if (next.stars == null && !next.liked) map.also { changed("rating:" + entry.url) } - entry.url else map + (entry.url to next)
     }
 
     fun rate(entry: MediaEntry, stars: Float?, year: Int? = null) = updateRating(entry, year) { it.copy(stars = stars) }
@@ -419,7 +438,107 @@ object AppData {
         "dismissedRecommendations" to object : TypeReference<Set<String>>() {},
     )
 
-    fun removeHistory(url: String) = _history.persist("history") { list -> list.filterNot { it.media.url == url } }
+    fun removeHistory(url: String) {
+        changed("history:$url")
+        _history.persist("history") { list -> list.filterNot { it.media.url == url } }
+    }
 
-    fun clearHistory() = _history.persist("history") { emptyList() }
+    fun clearHistory() {
+        _history.value.forEach { changed("history:" + it.media.url) }
+        _history.persist("history") { emptyList() }
+    }
+
+    /**
+     * When each bookmark last changed and when ratings and history entries were removed, by "bookmark:url",
+     * "rating:url" and "history:url". Syncing needs them to tell a removal on one computer from an addition on another.
+     */
+    private val _changes = MutableStateFlow(store.get("changes", emptyMap<String, Long>()))
+
+    private fun changed(key: String) = _changes.persist("changes") { it + (key to System.currentTimeMillis()) }
+
+    /** This computer, so it can tell its own sync file from the others' */
+    val deviceId: String by lazy {
+        store.get<String>("deviceId") ?: java.util.UUID.randomUUID().toString().also { store.set("deviceId", it) }
+    }
+
+    fun syncSnapshot(deviceName: String) = SyncSnapshot(
+        deviceId, deviceName, System.currentTimeMillis(), _bookmarks.value, _watchLists.value, _ratings.value, _history.value,
+        _positions.value, _importedRatings.value, _dismissedRecommendations.value, _changes.value,
+    )
+
+    /** Takes what changed on another computer: for each title, whichever side changed it last wins */
+    fun mergeSync(remote: SyncSnapshot) {
+        val changes = HashMap(_changes.value)
+        val remoteChanges = remote.changes
+        fun time(key: String) = changes[key] ?: 0L
+        fun remoteTime(key: String) = remoteChanges[key] ?: 0L
+
+        // Bookmarks and their lists
+        val local = _bookmarks.value.associateBy { it.url }
+        val theirs = remote.bookmarks.associateBy { it.url }
+        val lists = HashMap(_watchLists.value)
+        val bookmarks = LinkedHashMap<String, MediaEntry>()
+        val urls = (theirs.keys + local.keys + remoteChanges.keys.filter { it.startsWith("bookmark:") }.map { it.removePrefix("bookmark:") })
+        urls.forEach { url ->
+            val key = "bookmark:$url"
+            when {
+                remoteTime(key) > time(key) -> {
+                    theirs[url]?.let { bookmarks[url] = it }
+                    remote.watchLists[url]?.let { lists[url] = it } ?: lists.remove(url)
+                    changes[key] = remoteTime(key)
+                }
+                // Neither knows when, as for bookmarks from before syncing: keep it if either has it
+                remoteTime(key) == time(key) -> {
+                    (local[url] ?: theirs[url])?.let { bookmarks[url] = it }
+                    if (url !in lists) remote.watchLists[url]?.let { lists[url] = it }
+                }
+                else -> local[url]?.let { bookmarks[url] = it }
+            }
+        }
+        // Keep this computer's order, with what came from the other one in front
+        val ordered = bookmarks.values.filter { it.url !in local } + _bookmarks.value.filter { it.url in bookmarks }.map { bookmarks.getValue(it.url) }
+        val keptLists = lists.filterKeys { it in bookmarks }
+
+        // Ratings, a removal counts from when it happened
+        val ratings = HashMap<String, Rating>()
+        (_ratings.value.keys + remote.ratings.keys + remoteChanges.keys.filter { it.startsWith("rating:") }.map { it.removePrefix("rating:") }).forEach { url ->
+            val key = "rating:$url"
+            val mine = maxOf(_ratings.value[url]?.updatedAt ?: 0L, time(key))
+            val other = maxOf(remote.ratings[url]?.updatedAt ?: 0L, remoteTime(key))
+            val winner = if (other > mine) remote.ratings[url] else _ratings.value[url] ?: remote.ratings[url].takeIf { other == mine }
+            if (other > mine && remoteTime(key) > time(key)) changes[key] = remoteTime(key)
+            winner?.let { ratings[url] = it }
+        }
+
+        // History, one entry per show
+        val history = HashMap<String, WatchProgress>()
+        (_history.value + remote.history).forEach { progress ->
+            val url = progress.media.url
+            val removed = maxOf(time("history:$url"), remoteTime("history:$url"))
+            if (progress.updatedAt <= removed) return@forEach
+            if ((history[url]?.updatedAt ?: -1) < progress.updatedAt) history[url] = progress
+        }
+        remoteChanges.filterKeys { it.startsWith("history:") }.forEach { (key, at) -> if (at > time(key)) changes[key] = at }
+        val mergedHistory = history.values.sortedByDescending { it.updatedAt }.take(200)
+
+        // Positions, the latest per episode
+        val positions = LinkedHashMap(_positions.value)
+        remote.positions.forEach { (key, position) ->
+            if ((positions[key]?.updatedAt ?: -1) < position.updatedAt) positions[key] = position.withoutStaleSource()
+        }
+        if (positions.size > 5000) positions.keys.take(positions.size - 5000).forEach { positions.remove(it) }
+
+        val imported = remote.importedRatings + _importedRatings.value
+        val dismissed = _dismissedRecommendations.value + remote.dismissedRecommendations
+
+        if (ordered != _bookmarks.value) _bookmarks.persist("bookmarks") { ordered }
+        if (keptLists != _watchLists.value) _watchLists.persist("watchLists") { keptLists }
+        if (ratings != _ratings.value) _ratings.persist("ratings") { ratings }
+        if (mergedHistory != _history.value) _history.persist("history") { mergedHistory }
+        if (positions != _positions.value) _positions.persist("positions") { positions }
+        if (imported != _importedRatings.value) _importedRatings.persist("importedRatings") { imported }
+        if (dismissed != _dismissedRecommendations.value) _dismissedRecommendations.persist("dismissedRecommendations") { dismissed }
+        remoteChanges.forEach { (key, at) -> if (at > time(key)) changes[key] = at }
+        if (changes != _changes.value) _changes.persist("changes") { changes }
+    }
 }
