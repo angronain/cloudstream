@@ -126,6 +126,8 @@ data class ImportedRating(
     val source: String = "Letterboxd",
     /** Letterboxd films are all movies, Trakt says which */
     val movie: Boolean? = true,
+    /** When it was rated, liked or watched, null if the service did not say */
+    val date: Long? = null,
 ) {
     @get:JsonIgnore
     val key: String get() = "${name.lowercase()}|${year ?: ""}"

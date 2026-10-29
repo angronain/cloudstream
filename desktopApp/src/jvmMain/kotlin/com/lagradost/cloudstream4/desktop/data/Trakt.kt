@@ -208,7 +208,13 @@ object Trakt {
     private data class TraktTitle(val title: String? = null, val year: Int? = null, val ids: TraktIds = TraktIds())
 
     @JsonIgnoreProperties(ignoreUnknown = true)
-    private data class TraktRating(val rating: Int, val type: String = "", val movie: TraktTitle? = null, val show: TraktTitle? = null)
+    private data class TraktRating(
+        val rating: Int,
+        val type: String = "",
+        val movie: TraktTitle? = null,
+        val show: TraktTitle? = null,
+        @JsonProperty("rated_at") val ratedAt: String? = null,
+    )
 
     /** Sends the app's ratings and Plan to watch list to Trakt and takes Trakt's ratings for the recommendations */
     fun syncLibrary() {
@@ -236,7 +242,10 @@ object Trakt {
                 // Seasons and episodes are rated too, only whole titles help the recommendations
                 val theirs = mapper.readValue<List<TraktRating>>(get("sync/ratings")).filter { it.type == "movie" || it.type == "show" }.mapNotNull { rating ->
                     val title = rating.movie ?: rating.show ?: return@mapNotNull null
-                    ImportedRating(title.title ?: return@mapNotNull null, title.year, rating.rating / 2f, source = "Trakt", movie = rating.movie != null)
+                    ImportedRating(
+                        title.title ?: return@mapNotNull null, title.year, rating.rating / 2f, source = "Trakt", movie = rating.movie != null,
+                        date = rating.ratedAt?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() },
+                    )
                 }
                 AppData.clearImportedRatings("Trakt")
                 AppData.importRatings(theirs)

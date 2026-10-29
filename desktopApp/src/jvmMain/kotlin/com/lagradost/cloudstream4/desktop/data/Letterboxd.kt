@@ -24,7 +24,11 @@ object Letterboxd {
         val films = LinkedHashMap<String, ImportedRating>()
         fun merge(rating: ImportedRating) {
             val previous = films[rating.key]
-            films[rating.key] = rating.copy(stars = rating.stars ?: previous?.stars, liked = rating.liked || previous?.liked == true)
+            films[rating.key] = rating.copy(
+                stars = rating.stars ?: previous?.stars,
+                liked = rating.liked || previous?.liked == true,
+                date = listOfNotNull(rating.date, previous?.date).maxOrNull(),
+            )
         }
         // Watched first, so ratings and likes complete them
         val order = listOf("watched.csv", "ratings.csv", "films.csv")
@@ -42,6 +46,7 @@ object Letterboxd {
                             liked = liked,
                             source = "Letterboxd",
                             movie = true,
+                            date = row["Date"]?.let { runCatching { SimpleDateFormat("yyyy-MM-dd").parse(it).time }.getOrNull() },
                         )
                     )
                 }

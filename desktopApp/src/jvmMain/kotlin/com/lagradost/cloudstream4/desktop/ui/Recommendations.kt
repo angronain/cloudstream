@@ -34,6 +34,7 @@ object Recommendations {
     private val file = File(AppDirs.cacheDir, "recommendations.json")
     private const val MAX_AGE_MS = 3L * 24 * 60 * 60 * 1000
     private const val MAX_SEEDS = 60
+    private const val YEAR_MS = 365.0 * 24 * 60 * 60 * 1000
 
     private data class Seed(val name: String, val year: Int?, val movie: Boolean?, val weight: Double)
 
@@ -63,18 +64,24 @@ object Recommendations {
     /** What the user liked, the better the rating the more it counts, low ratings count against */
     private fun seeds(): List<Seed> {
         val seeds = LinkedHashMap<String, Seed>()
-        fun add(name: String, year: Int?, movie: Boolean?, stars: Float?, liked: Boolean, watched: Boolean) {
-            val weight = (stars?.let { it - 2.75 } ?: if (watched) 0.75 else 0.0) + if (liked) 1.0 else 0.0
+        val now = System.currentTimeMillis()
+        fun add(name: String, year: Int?, movie: Boolean?, stars: Float?, liked: Boolean, watched: Boolean, date: Long?) {
+            val opinion = (stars?.let { it - 2.75 } ?: if (watched) 0.75 else 0.0) + if (liked) 1.0 else 0.0
+            if (opinion == 0.0) return
+            // Tastes change: an opinion counts half as much after a year, but never less than a quarter.
+            // Rounded, so the list is not rebuilt on every launch only because a day passed
+            val years = date?.let { (now - it).coerceAtLeast(0) / YEAR_MS } ?: 0.0
+            val weight = kotlin.math.round(opinion * maxOf(0.25, Math.pow(0.5, years)) * 10) / 10
             if (weight == 0.0) return
             // One opinion per title, the app's own rating wins over its history and over an imported one
             val key = name.lowercase()
             if (key !in seeds) seeds[key] = Seed(name, year, movie, weight)
         }
         AppData.ratings.value.values.sortedByDescending { it.updatedAt }.forEach {
-            add(it.media.name, it.year, it.media.type.isMovie(), it.stars, it.liked, true)
+            add(it.media.name, it.year, it.media.type.isMovie(), it.stars, it.liked, true, it.updatedAt)
         }
-        AppData.history.value.forEach { add(it.media.name, null, it.media.type.isMovie(), null, false, true) }
-        AppData.importedRatings.value.values.forEach { add(it.name, it.year, it.movie, it.stars, it.liked, true) }
+        AppData.history.value.forEach { add(it.media.name, null, it.media.type.isMovie(), null, false, true, it.updatedAt) }
+        AppData.importedRatings.value.values.forEach { add(it.name, it.year, it.movie, it.stars, it.liked, true, it.date) }
         // The strongest opinions first, the dislikes only matter for the titles they would bring
         return seeds.values.sortedByDescending { kotlin.math.abs(it.weight) }.take(MAX_SEEDS)
     }
