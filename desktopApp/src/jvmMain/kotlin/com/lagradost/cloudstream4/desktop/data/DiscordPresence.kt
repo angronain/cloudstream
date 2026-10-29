@@ -32,7 +32,7 @@ data class Presence(
 
 /**
  * Shows "Watching ..." on Discord through the Discord app's local connection (discord-ipc), no account access needed.
- * Discord shows the name of the Discord application whose id is in the settings.
+ * Discord shows the name of the CloudStream application registered on Discord.
  */
 object DiscordPresence {
     private val executor = Executors.newSingleThreadExecutor { Thread(it, "discord-presence").apply { isDaemon = true } }
@@ -41,7 +41,11 @@ object DiscordPresence {
     private var lastFailure = 0L
     private var last: Presence? = null
 
-    private val applicationId: String get() = AppData.settings.value.discordApplicationId.trim()
+    /** The CloudStream application on Discord, whose name Discord shows */
+    private const val CLOUDSTREAM_APPLICATION_ID = "1565438961424277675"
+
+    private val applicationId: String
+        get() = AppData.settings.value.discordApplicationId.trim().ifEmpty { CLOUDSTREAM_APPLICATION_ID }
 
     fun update(presence: Presence?) {
         executor.execute {

@@ -375,21 +375,6 @@ fun SettingsScreen() {
                 AppData.updateSettings { it.copy(discordPresence = value) }
                 if (!value) DiscordPresence.clear()
             }
-            if (settings.discordPresence) {
-                OutlinedTextField(
-                    value = settings.discordApplicationId,
-                    onValueChange = { value -> AppData.updateSettings { it.copy(discordApplicationId = value.filter(Char::isDigit)) } },
-                    label = { Text(tr("Discord application ID")) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    tr("Discord shows the name of an application you create: at discord.com/developers/applications, click New Application, name it CloudStream, and paste its Application ID here."),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                TextButton(onClick = { openInBrowser("https://discord.com/developers/applications") }) { Text(tr("Open Discord developer portal")) }
-            }
         }
 
         Section(tr("Storage")) {

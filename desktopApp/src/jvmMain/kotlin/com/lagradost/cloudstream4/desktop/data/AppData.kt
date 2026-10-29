@@ -177,7 +177,7 @@ data class Settings(
     val syncFolder: String = "",
     /** Shows what is playing on the Discord profile */
     val discordPresence: Boolean = false,
-    /** The Discord application whose name Discord shows, from discord.com/developers/applications */
+    /** Another Discord application to show instead of CloudStream's, from discord.com/developers/applications */
     val discordApplicationId: String = "",
     /** The user's Trakt API application, from trakt.tv/oauth/applications */
     val traktClientId: String = "",
