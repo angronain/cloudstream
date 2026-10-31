@@ -63,7 +63,7 @@ compose.resources {
 // CI passes the version from the release tag (desktop-v1.2.3 -> 1.2.3) so updates compare correctly
 val appVersion = (findProperty("desktopVersion") as String?)?.takeIf { it.isNotBlank() } ?: libs.versions.versionName.get()
 // GitHub repository whose releases the app updates itself from
-val updateRepository = (findProperty("desktopUpdateRepo") as String?) ?: "atomic-crafter/cloudstream"
+val updateRepository = (findProperty("desktopUpdateRepo") as String?) ?: "angronain/cloudstream"
 
 val generateBuildInfo by tasks.registering {
     val output = layout.buildDirectory.dir("generated/buildinfo/kotlin")
