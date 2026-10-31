@@ -35,6 +35,9 @@ import java.util.BitSet
 internal class MethodSplitter(private val owner: ClassNode, private val method: MethodNode) {
     private var parts = 0
 
+    /** Where the original method keeps the arrays it passes, the same slots for every part */
+    private var arraySlot = -1
+
     /** Moves out one part, false when no part is worth it */
     fun splitOnce(): Boolean {
         val code = Code.analyze(owner, method) ?: return false
@@ -435,7 +438,9 @@ internal class MethodSplitter(private val owner: ClassNode, private val method: 
         owner.methods.add(partMethod)
 
         // The original method calls the part where the part began
-        val arraySlot = code.firstFreeSlot
+        // A part starting right after an earlier call can need the arrays of that call, then new slots are taken
+        if (arraySlot < 0 || (arraySlot until arraySlot + KINDS.size).any { passed[it] }) arraySlot = code.firstFreeSlot
+        val arraySlot = arraySlot
         val call = InsnList()
         val callStart = LabelNode()
         val callEnd = LabelNode()
@@ -514,7 +519,7 @@ internal class MethodSplitter(private val owner: ClassNode, private val method: 
         method.tryCatchBlocks = blocks
         method.instructions.insertBefore(rootNode, call)
         part.stream().forEach { r -> method.instructions.remove(insns[code.real[r]]) }
-        method.maxLocals = arraySlot + KINDS.size
+        method.maxLocals = maxOf(method.maxLocals, arraySlot + KINDS.size)
         method.localVariables = null
     }
 

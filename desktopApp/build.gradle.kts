@@ -95,7 +95,8 @@ compose.desktop {
         mainClass = "com.lagradost.cloudstream4.MainKt"
         jvmArgs += listOf(
             "--enable-native-access=ALL-UNNAMED",
-            "-Xmx2G",
+            // Converting a large Android extension takes up to 2 GB on its own, on top of the app
+            "-Xmx4G",
             *extensionJvmArgs,
             // The macOS default library path includes /Network/Library/Java/Extensions, and looking there for JNA's
             // library makes macOS ask for network volume access on every launch. $APPDIR is set by the launcher.
