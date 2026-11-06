@@ -14,6 +14,8 @@ import com.lagradost.cloudstream3.utils.DrmExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.AppDns
+import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.SavedSource
 import com.lagradost.cloudstream4.desktop.player.StreamProxy
@@ -21,14 +23,14 @@ import com.lagradost.cloudstream4.desktop.player.Track
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 data class PlayerState(
@@ -53,14 +55,17 @@ fun ExtractorLink.label(): String {
     return listOfNotNull(name, quality, type.name.takeIf { type != ExtractorLinkType.VIDEO }).distinct().joinToString(" · ")
 }
 
-/** The url the player should open, going through the header proxy when the extension needs headers */
+/**
+ * The url the player should open, going through the header proxy when the extension needs headers, or when
+ * names are looked up through DNS over HTTPS, which VLC cannot do
+ */
 fun ExtractorLink.playbackUrl(): String =
-    if (headers.isEmpty() && referer.isBlank()) url else StreamProxy.proxy(url, headers, referer)
+    if (headers.isEmpty() && referer.isBlank() && !AppDns.isOn) url else StreamProxy.proxy(url, headers, referer)
 
 /** Separate audio files some extensions provide next to the video */
 fun ExtractorLink.audioUrls(): List<String> = audioTracks.map { audio ->
     val headers = audio.headers.orEmpty()
-    if (headers.isEmpty()) audio.url else StreamProxy.proxy(audio.url, headers, "")
+    if (headers.isEmpty() && !AppDns.isOn) audio.url else StreamProxy.proxy(audio.url, headers, "")
 }
 
 /** The language part of a VLC audio track description, like "eng" in "English 5.1 - [eng]" */
@@ -139,6 +144,9 @@ class PlayerViewModel(
         links.firstOrNull(saved::matches) ?: links.firstOrNull { it.source == saved.source && it.name == saved.name }
     } ?: links.firstOrNull()
 
+    /** The extension looking for links, until it is done, gives up or the user skips the rest */
+    private var loading: Job? = null
+
     private fun loadOnlineLinks(initial: PlayerState = PlayerState()) {
         val api = APIHolder.getApiFromNameNull(apiName)
         if (api == null) {
@@ -146,45 +154,58 @@ class PlayerViewModel(
             return
         }
         _state.value = initial
-        scope.launch(Dispatchers.IO) {
+        loading?.cancel()
+        val job = scope.launch(Dispatchers.IO) {
             try {
-                withTimeout(api.loadLinksTimeoutMs ?: 120_000L) {
-                    api.loadLinks(
-                        data,
-                        false,
-                        subtitleCallback = { subtitle ->
+                api.loadLinks(
+                    data,
+                    false,
+                    subtitleCallback = { subtitle ->
+                        _state.update { s ->
+                            if (s.subtitles.any { it.url == subtitle.url }) s else s.copy(subtitles = s.subtitles + subtitle)
+                        }
+                    },
+                    callback = { link ->
+                        if (link.isPlayable()) {
                             _state.update { s ->
-                                if (s.subtitles.any { it.url == subtitle.url }) s else s.copy(subtitles = s.subtitles + subtitle)
-                            }
-                        },
-                        callback = { link ->
-                            if (link.isPlayable()) {
-                                _state.update { s ->
-                                    if (s.links.any { it.url == link.url }) s
-                                    else {
-                                        val found = waitingForRemembered && remembered?.matches(link) == true
-                                        if (found) waitingForRemembered = false
-                                        s.copy(
-                                            links = sortUrls((s.links + link).toSet()),
-                                            selectedLink = if (found) link else s.selectedLink,
-                                        )
-                                    }
+                                if (s.links.any { it.url == link.url }) s
+                                else {
+                                    val found = waitingForRemembered && remembered?.matches(link) == true
+                                    if (found) waitingForRemembered = false
+                                    s.copy(
+                                        links = sortUrls((s.links + link).toSet()),
+                                        selectedLink = if (found) link else s.selectedLink,
+                                    )
                                 }
                             }
-                        },
-                    )
-                }
+                        }
+                    },
+                )
             } catch (t: Throwable) {
-                if (t is CancellationException && t !is TimeoutCancellationException) throw t
+                if (t is CancellationException) throw t
                 logError(t)
             }
-            _state.update { s ->
-                s.copy(
-                    isLoadingLinks = false,
-                    selectedLink = s.selectedLink ?: preferredLink(s.links),
-                    error = if (s.links.isEmpty()) tr("No playable links found") else null,
-                )
-            }
+        }
+        loading = job
+        scope.launch {
+            // An extension stuck in a blocking call never notices it was cancelled, so it is not waited for
+            withTimeoutOrNull(api.loadLinksTimeoutMs ?: 120_000L) { job.join() }
+            if (loading === job) skipLoading()
+        }
+    }
+
+    /** Stops waiting for more links and plays the best one found so far, like Skip loading on Android */
+    fun skipLoading() {
+        loading?.cancel()
+        loading = null
+        waitingForRemembered = false
+        _state.update { s ->
+            if (!s.isLoadingLinks) s
+            else s.also { AppLog.log("Player: ${it.links.size} playable links found") }.copy(
+                isLoadingLinks = false,
+                selectedLink = s.selectedLink ?: preferredLink(s.links),
+                error = if (s.links.isEmpty()) tr("No playable links found") else null,
+            )
         }
     }
 

@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeImageBitmap
 import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.AppLog
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
@@ -34,12 +35,16 @@ data class Track(val id: Int, val name: String)
 object Vlc {
     /** Only finds the LibVLC libraries, without starting VLC itself, so screens can check it cheaply */
     val isInstalled: Boolean by lazy {
+        // vlcj also searches the working folder and every folder under it, which is the whole disk when the app
+        // is opened from the Finder (it starts in /), so the player never opened. It searches a small folder instead.
+        val workingDir = System.getProperty("user.dir")
+        System.setProperty("user.dir", AppDirs.dataDir.path)
         runCatching {
             val discovery = NativeDiscovery()
             discovery.discover().also { found ->
                 AppLog.log("VLC: ${if (found) "found at ${discovery.discoveredPath()}" else "not found"}")
             }
-        }.onFailure { logError(it) }.getOrDefault(false)
+        }.onFailure { logError(it) }.getOrDefault(false).also { System.setProperty("user.dir", workingDir) }
     }
 
     /** Why the VLC that is installed cannot be used, null if it is not installed or works */

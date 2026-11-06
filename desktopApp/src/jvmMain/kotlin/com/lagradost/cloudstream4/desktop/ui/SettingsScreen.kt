@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.lagradost.cloudstream4.desktop.BuildInfo
 import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.data.DnsProvider
 import com.lagradost.cloudstream4.desktop.data.I18n
 import com.lagradost.cloudstream4.desktop.data.AppLog
 import com.lagradost.cloudstream4.desktop.data.AppDirs
@@ -215,6 +216,21 @@ fun SettingsScreen() {
                 tr("Downloads repositories and extensions through cdn.jsdelivr.net, useful if GitHub is blocked"),
                 settings.jsdelivrProxy,
             ) { value -> AppData.updateSettings { it.copy(jsdelivrProxy = value) } }
+            Text(tr("DNS over HTTPS"), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                tr("Looks up sites through this service instead of your internet provider, which may block streaming sites so that sources find no links"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DnsProvider.entries.forEach { provider ->
+                    FilterChip(
+                        settings.dns == provider,
+                        onClick = { AppData.updateSettings { it.copy(dns = provider) } },
+                        label = { Text(if (provider == DnsProvider.System) tr("Off") else provider.title) },
+                    )
+                }
+            }
         }
 
         Section(tr("Library")) {

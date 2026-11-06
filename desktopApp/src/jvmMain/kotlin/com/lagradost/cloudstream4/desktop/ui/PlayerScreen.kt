@@ -182,7 +182,12 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         if (value == null) value = withContext(Dispatchers.IO) { Vlc.isAvailable.also { Vlc.problem } }
     }
     if (settings.player == PlayerKind.Internal && vlcAvailable == null) {
-        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+            Box(Modifier.align(Alignment.TopStart).padding(horizontal = 24.dp, vertical = 20.dp)) {
+                RoundControl(Res.drawable.arrow_back, tr("Back")) { navigator.back() }
+            }
+        }
         return
     }
 
@@ -219,9 +224,13 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
         )
     }
 
-    // Start (or switch) playback whenever the selected link changes, resuming where the user left off
     // The engine is kept between episodes, its current time only carries over when switching sources
     var engineEpisode by remember { mutableStateOf<String?>(null) }
+    // The previous episode stops while the next one's links load, instead of playing on under them
+    LaunchedEffect(viewModel) {
+        if (viewModel.state.value.selectedLink == null && engineEpisode != null) engine.stop()
+    }
+    // Start (or switch) playback whenever the selected link changes, resuming where the user left off
     LaunchedEffect(state.selectedLink) {
         val link = state.selectedLink ?: return@LaunchedEffect
         val resume = AppData.positions.value[playable.data]?.takeIf { it.fraction < 0.95f }?.positionMs ?: 0L
@@ -434,7 +443,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     }
     // A menu is a separate popup, the mouse moving or scrolling in it does not count as interacting with the player
     val openMenus = remember { mutableIntStateOf(0) }
-    val controlsVisible = !engine.isPlaying || openMenus.intValue > 0 || now - lastInteraction < 3_000
+    val controlsVisible = !engine.isPlaying || state.selectedLink == null || openMenus.intValue > 0 || now - lastInteraction < 3_000
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
 
@@ -641,6 +650,12 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 if (state.error != null) {
                     Spacer(Modifier.height(16.dp))
                     PrimaryPill(tr("Retry"), Res.drawable.replay, false, viewModel::loadLinks)
+                } else if (state.selectedLink == null && state.isLoadingLinks) {
+                    Spacer(Modifier.height(16.dp))
+                    GhostPill(tr("Skip loading"), Res.drawable.skip_next) {
+                        focus.requestFocus()
+                        viewModel.skipLoading()
+                    }
                 }
             }
         }
@@ -1069,7 +1084,12 @@ private fun ExternalPlayerScreen(
             if (Vlc.problem == null) TextButton(onClick = { openInBrowser("https://www.videolan.org/vlc/") }) { Text(tr("Download VLC")) }
         }
         launched?.let { Text(it) }
-        if (state.isLoadingLinks) Text(tr("Loading links ({0} found)...", state.links.size))
+        if (state.isLoadingLinks) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(tr("Loading links ({0} found)...", state.links.size))
+                TextButton(onClick = viewModel::skipLoading) { Text(tr("Skip loading")) }
+            }
+        }
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(state.links, key = { it.url }) { link ->

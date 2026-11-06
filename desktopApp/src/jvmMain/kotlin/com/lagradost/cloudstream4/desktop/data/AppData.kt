@@ -154,6 +154,8 @@ data class Settings(
     val externalPlayer: String = "",
     /** Route raw.githubusercontent.com through jsDelivr, useful where GitHub is blocked */
     val jsdelivrProxy: Boolean = false,
+    /** Where the app looks up site names, a DNS over HTTPS service gets around sites blocked by the internet provider */
+    val dns: DnsProvider = DnsProvider.System,
     /** The provider shown on the home page */
     val homeProvider: String? = null,
     val seekSeconds: Int = 10,
