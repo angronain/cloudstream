@@ -55,6 +55,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.lagradost.cloudstream3.SubtitleFile
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -74,6 +76,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -746,7 +749,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Box(
-                            Modifier.size(48.dp).clip(RoundedCornerShape(50)).background(Color.White).clickable { engine.togglePause(); focus.requestFocus() },
+                            Modifier.size(48.dp).clip(RoundedCornerShape(50)).background(Color.White).focusProperties { canFocus = false }.clickable { engine.togglePause() },
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(painterResource(if (engine.isPlaying) Res.drawable.pause else Res.drawable.play), tr("Play/Pause"), tint = Color.Black, modifier = Modifier.size(28.dp))
@@ -762,16 +765,17 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                             value = engine.volume / 200f,
                             onValueChange = { engine.changeVolume((it * 200).toInt()) },
                             colors = SliderDefaults.colors(thumbColor = Color.White, activeTrackColor = Color.White, inactiveTrackColor = Color.White.copy(alpha = 0.25f)),
-                            modifier = Modifier.width(110.dp),
+                            modifier = Modifier.width(110.dp).focusProperties { canFocus = false },
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
                             "${formatTime(dragging?.let { (it * engine.lengthMs).toLong() } ?: engine.timeMs)} / ${formatTime(engine.lengthMs)}",
-                            color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelLarge,
+                            // Digits of one width, so the buttons after it do not move every second
+                            color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
                         )
                         Spacer(Modifier.weight(1f))
 
-                        MenuButton(Res.drawable.sources, tr("Sources ({0})", state.links.size), openMenus) { close ->
+                        MenuButton(Res.drawable.sources, tr("Sources ({0})", state.links.size), openMenus, focus) { close ->
                             if (state.isLoadingLinks) DropdownMenuItem(text = { Text(tr("Still loading links...")) }, onClick = {}, enabled = false)
                             state.links.forEach { link ->
                                 DropdownMenuItem(
@@ -783,7 +787,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 )
                             }
                         }
-                        MenuButton(Res.drawable.subtitles, tr("Subtitles"), openMenus) { close ->
+                        MenuButton(Res.drawable.subtitles, tr("Subtitles"), openMenus, focus) { close ->
                             DropdownMenuItem(text = { Text(tr("Off")) }, onClick = {
                                 close()
                                 engine.selectSubtitle(-1)
@@ -798,17 +802,43 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                     },
                                 )
                             }
-                            state.subtitles.forEach { subtitle ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(subtitle.lang, fontWeight = if (subtitle == state.selectedSubtitle) FontWeight.Bold else null)
-                                    },
-                                    onClick = {
+                            // One row per language like on Android, its files listed under it once opened
+                            var openLanguage by remember { mutableStateOf<String?>(null) }
+                            state.subtitles.groupBy { it.langTag?.substringBefore('-')?.lowercase() ?: it.lang.trim().lowercase() }
+                                .forEach { (language, files) ->
+                                    fun pick(subtitle: SubtitleFile) {
                                         close()
                                         scope.launch { viewModel.downloadSubtitle(subtitle)?.let(engine::addSubtitleFile) }
-                                    },
-                                )
-                            }
+                                    }
+                                    val selected = state.selectedSubtitle in files
+                                    val name = files.minBy { it.lang.length }.lang
+                                    if (files.size == 1) {
+                                        DropdownMenuItem(
+                                            text = { Text(name, fontWeight = if (selected) FontWeight.Bold else null) },
+                                            onClick = { pick(files.first()) },
+                                        )
+                                        return@forEach
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("$name (${files.size})", fontWeight = if (selected) FontWeight.Bold else null) },
+                                        trailingIcon = { Text(if (openLanguage == language) "−" else "+", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                        onClick = { openLanguage = if (openLanguage == language) null else language },
+                                    )
+                                    if (openLanguage == language) {
+                                        files.forEachIndexed { index, subtitle ->
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        if (subtitle.lang == name) tr("{0} {1}", name, index + 1) else subtitle.lang,
+                                                        fontWeight = if (subtitle == state.selectedSubtitle) FontWeight.Bold else null,
+                                                    )
+                                                },
+                                                onClick = { pick(subtitle) },
+                                                contentPadding = PaddingValues(start = 32.dp, end = 12.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             DropdownMenuItem(text = { Text(tr("Search online…")) }, onClick = {
                                 close()
                                 searchingSubtitles = true
@@ -831,7 +861,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                         }
                         val otherSources = state.links.filter { it !== state.selectedLink && it.url != state.selectedLink?.url }
                         if (engine.audioTracks.size > 2 || otherSources.isNotEmpty() || engine.audioDelayMs != 0L) {
-                            MenuButton(Res.drawable.audio, tr("Audio"), openMenus) { close ->
+                            MenuButton(Res.drawable.audio, tr("Audio"), openMenus, focus) { close ->
                                 engine.audioTracks.filter { it.id >= 0 }.forEach { track ->
                                     DropdownMenuItem(
                                         text = { Text(track.name, fontWeight = if (track.id == engine.audioTrack) FontWeight.Bold else null) },
@@ -875,7 +905,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                 }
                             }
                         }
-                        MenuButton(Res.drawable.speed, tr("Speed {0}x", engine.rate), openMenus) { close ->
+                        MenuButton(Res.drawable.speed, tr("Speed {0}x", engine.rate), openMenus, focus) { close ->
                             listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { rate ->
                                 DropdownMenuItem(text = { Text("${rate}x") }, onClick = {
                                     close()
@@ -938,7 +968,7 @@ private val BottomFadeReversed = Brush.verticalGradient(
 
 @Composable
 private fun ControlButton(icon: DrawableResource, description: String, onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = Modifier.focusProperties { canFocus = false }) {
         Icon(painterResource(icon), description, tint = Color.White, modifier = Modifier.size(26.dp))
     }
 }
@@ -947,7 +977,7 @@ private fun ControlButton(icon: DrawableResource, description: String, onClick: 
 @Composable
 private fun RoundControl(icon: DrawableResource, description: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.14f)).clickable(onClick = onClick),
+        Modifier.size(44.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.14f)).focusProperties { canFocus = false }.clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(painterResource(icon), description, tint = Color.White, modifier = Modifier.size(22.dp))
@@ -1016,18 +1046,27 @@ private fun MenuButton(
     icon: DrawableResource,
     description: String,
     openMenus: MutableIntState,
+    /** The player's, the keyboard shortcuts work again once the menu closes */
+    playerFocus: FocusRequester,
     content: @Composable (close: () -> Unit) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     // Keeps the controls, and so this menu, shown while it is open
     DisposableEffect(expanded) {
-        if (expanded) openMenus.intValue++
-        onDispose { if (expanded) openMenus.intValue-- }
+        // Read once: when the menu opens, the cleanup of the closed state runs after expanded already changed
+        val open = expanded
+        if (open) openMenus.intValue++
+        onDispose {
+            if (open) {
+                openMenus.intValue--
+                playerFocus.requestFocus()
+            }
+        }
     }
     Box(Modifier.padding(horizontal = 3.dp)) {
         Row(
             Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = if (expanded) 0.24f else 0.12f))
-                .clickable { expanded = true }.padding(horizontal = 14.dp, vertical = 9.dp),
+                .focusProperties { canFocus = false }.clickable { expanded = true }.padding(horizontal = 14.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
