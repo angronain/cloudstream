@@ -38,7 +38,6 @@ data class PlayerState(
     val subtitles: List<SubtitleFile> = emptyList(),
     val isLoadingLinks: Boolean = true,
     val selectedLink: ExtractorLink? = null,
-    val selectedSubtitle: SubtitleFile? = null,
     val error: String? = null,
 )
 
@@ -239,26 +238,35 @@ class PlayerViewModel(
         return next != null
     }
 
-    fun clearSubtitle() = _state.update { it.copy(selectedSubtitle = null) }
-
-    /** VLC handles local files far better than remote ones, so subtitles are downloaded first */
+    /** VLC handles local files far better than remote ones, so subtitles are downloaded first. */
     suspend fun downloadSubtitle(subtitle: SubtitleFile): File? = withContext(Dispatchers.IO) {
         try {
             if (subtitle.url.startsWith("file:")) {
-                return@withContext File(java.net.URI(subtitle.url)).also { _state.update { s -> s.copy(selectedSubtitle = subtitle) } }
+                return@withContext File(java.net.URI(subtitle.url)).takeIf { it.isFile && it.length() > 0 }
             }
-            val text = app.get(subtitle.url, headers = subtitle.headers.orEmpty()).text
+            val response = app.get(subtitle.url, headers = subtitle.headers.orEmpty())
+            if (!response.isSuccessful) return@withContext null
+            val text = response.text.removePrefix("\uFEFF")
+            // Providers sometimes return a successful HTTP status with an error page instead of cues.
+            // Detect the format from the contents, since the URL may not have a meaningful extension.
             val extension = when {
-                text.trimStart().startsWith("WEBVTT") -> "vtt"
-                text.contains("[Script Info]") -> "ass"
-                else -> subtitle.url.substringBefore('?').substringAfterLast('.', "srt").take(4).lowercase()
+                text.trimStart().startsWith("WEBVTT") &&
+                    subtitleTimestamp.containsMatchIn(text) -> "vtt"
+                text.contains("[Script Info]", ignoreCase = true) &&
+                    text.lineSequence().any { it.startsWith("Dialogue:", ignoreCase = true) } -> "ass"
+                !text.trimStart().startsWith("<") && subtitleTimestamp.containsMatchIn(text) -> "srt"
+                else -> return@withContext null
             }
             val dir = File(AppDirs.cacheDir, "subtitles").also { it.mkdirs() }
             File(dir, "${subtitle.url.hashCode()}.$extension").apply { writeText(text) }
-                .also { _state.update { s -> s.copy(selectedSubtitle = subtitle) } }
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             logError(t)
             null
         }
+    }
+
+    private companion object {
+        val subtitleTimestamp = Regex("""(?m)^\s*(?:\d{1,3}:)?\d{2}:\d{2}[.,]\d{3}\s+-->\s+(?:\d{1,3}:)?\d{2}:\d{2}[.,]\d{3}""")
     }
 }

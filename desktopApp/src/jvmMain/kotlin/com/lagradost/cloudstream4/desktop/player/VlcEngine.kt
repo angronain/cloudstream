@@ -9,6 +9,7 @@ import com.lagradost.cloudstream3.mvvm.logError
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.AppDirs
 import com.lagradost.cloudstream4.desktop.data.AppLog
+import com.lagradost.cloudstream4.desktop.data.OperatingSystem
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ImageInfo
@@ -24,6 +25,8 @@ import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormat
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCallback
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.format.RV32BufferFormat
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import java.awt.GraphicsEnvironment
 import java.io.File
 import java.nio.ByteBuffer
@@ -61,11 +64,15 @@ object Vlc {
             if (isInstalled) {
                 AppLog.log("VLC: starting")
                 val settings = AppData.settings.value
-                val subtitleOptions = buildList {
+                val playerOptions = buildList {
+                    // VLC 3 cannot blend subtitle overlays into VideoToolbox frames in the callback video output.
+                    if (AppDirs.os == OperatingSystem.MacOS) {
+                        addAll(listOf("--codec=avcodec,any", "--avcodec-hw=none"))
+                    }
                     add("--sub-text-scale=${settings.subtitleScale.coerceIn(10, 500)}")
                     if (settings.subtitleBackground) addAll(listOf("--freetype-background-opacity=160", "--freetype-background-color=0"))
                 }
-                MediaPlayerFactory("--no-video-title-show", "--network-caching=3000", "--no-metadata-network-access", *subtitleOptions.toTypedArray()).also { factory ->
+                MediaPlayerFactory("--no-video-title-show", "--network-caching=3000", "--no-metadata-network-access", *playerOptions.toTypedArray()).also { factory ->
                     AppLog.log("VLC: started, version ${factory.application().version()}")
                     // VLC's own warnings and errors end up in the log next to the app's
                     nativeLog = factory.application().newLog().apply {
@@ -347,6 +354,7 @@ class VlcEngine(factory: MediaPlayerFactory) {
         aspectFromTrack = false
         audioTracks = emptyList()
         subtitleTracks = emptyList()
+        subtitleTrack = -1
         val options = buildList {
             if (startMs > 0) add(":start-time=${startMs / 1000.0}")
         }.toTypedArray()
@@ -424,9 +432,18 @@ class VlcEngine(factory: MediaPlayerFactory) {
         refreshTracks()
     }
 
-    fun addSubtitleFile(file: File) {
-        vlc { player.subpictures().setSubTitleFile(file) }
-        refreshTracks()
+    suspend fun addSubtitleFile(file: File): Boolean = suspendCancellableCoroutine { result ->
+        if (released) {
+            result.resume(false)
+            return@suspendCancellableCoroutine
+        }
+        player.submit {
+            if (!result.isActive) return@submit
+            val added = !released && runCatching { player.subpictures().setSubTitleFile(file) }
+                .onFailure { logError(it) }.getOrDefault(false)
+            if (added) refreshTracks()
+            result.resume(added)
+        }
     }
 
     fun stop() = vlc { player.controls().stop() }

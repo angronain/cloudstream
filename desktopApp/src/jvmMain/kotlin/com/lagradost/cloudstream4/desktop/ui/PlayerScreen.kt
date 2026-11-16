@@ -460,6 +460,34 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
     var showShortcuts by remember { mutableStateOf(false) }
     var searchingSubtitles by remember { mutableStateOf(false) }
 
+    var activeSubtitle by remember(viewModel, state.selectedLink) { mutableStateOf<SubtitleFile?>(null) }
+    var subtitleJob by remember(viewModel, state.selectedLink) { mutableStateOf<Job?>(null) }
+    var subtitleNotice by remember(viewModel, state.selectedLink) { mutableStateOf<String?>(null) }
+    DisposableEffect(viewModel, state.selectedLink) {
+        onDispose { subtitleJob?.cancel() }
+    }
+    fun applySubtitle(subtitle: SubtitleFile? = null, file: File? = null) {
+        subtitleJob?.cancel()
+        subtitleJob = scope.launch {
+            subtitleNotice = tr("Loading subtitle…")
+            val local = file ?: subtitle?.let { viewModel.downloadSubtitle(it) }
+            if (local != null && engine.addSubtitleFile(local)) {
+                activeSubtitle = subtitle
+                subtitleNotice = null
+            } else {
+                subtitleNotice = tr("Could not load this subtitle. Try another file.")
+                delay(5_000)
+                subtitleNotice = null
+            }
+        }
+    }
+    fun selectNativeSubtitle(id: Int) {
+        subtitleJob?.cancel()
+        subtitleNotice = null
+        activeSubtitle = null
+        engine.selectSubtitle(id)
+    }
+
     // Two-finger swipes: horizontal seeks, vertical changes the volume. One direction is kept per swipe.
     val swipe = remember { SwipeGesture() }
     var swipeLabel by remember { mutableStateOf<String?>(null) }
@@ -605,7 +633,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                 title = route.media.name,
                 season = playable.season,
                 episode = playable.episode,
-                onPicked = engine::addSubtitleFile,
+                onPicked = { applySubtitle(file = it) },
                 onClose = {
                     searchingSubtitles = false
                     focus.requestFocus()
@@ -625,7 +653,7 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
             )
         }
 
-        sourceNotice?.let { notice ->
+        (subtitleNotice ?: sourceNotice)?.let { notice ->
             Text(
                 notice,
                 color = Color.White,
@@ -788,39 +816,40 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                             }
                         }
                         MenuButton(Res.drawable.subtitles, tr("Subtitles"), openMenus, focus) { close ->
-                            DropdownMenuItem(text = { Text(tr("Off")) }, onClick = {
+                            DropdownMenuItem(text = {
+                                Text(if (engine.subtitleTrack < 0 && activeSubtitle == null) "✓ ${tr("Off")}" else tr("Off"))
+                            }, onClick = {
                                 close()
-                                engine.selectSubtitle(-1)
-                                viewModel.clearSubtitle()
+                                selectNativeSubtitle(-1)
                             })
                             engine.subtitleTracks.filter { it.id >= 0 }.forEach { track ->
                                 DropdownMenuItem(
-                                    text = { Text(track.name, fontWeight = if (track.id == engine.subtitleTrack) FontWeight.Bold else null) },
+                                    text = { Text(if (track.id == engine.subtitleTrack && activeSubtitle == null) "✓ ${track.name}" else track.name) },
                                     onClick = {
                                         close()
-                                        engine.selectSubtitle(track.id)
+                                        selectNativeSubtitle(track.id)
                                     },
                                 )
                             }
                             // One row per language like on Android, its files listed under it once opened
-                            var openLanguage by remember { mutableStateOf<String?>(null) }
-                            state.subtitles.groupBy { it.langTag?.substringBefore('-')?.lowercase() ?: it.lang.trim().lowercase() }
+                            var openLanguage by remember(activeSubtitle) { mutableStateOf(activeSubtitle?.languageGroup()) }
+                            state.subtitles.groupBy { it.languageGroup() }
                                 .forEach { (language, files) ->
                                     fun pick(subtitle: SubtitleFile) {
                                         close()
-                                        scope.launch { viewModel.downloadSubtitle(subtitle)?.let(engine::addSubtitleFile) }
+                                        applySubtitle(subtitle)
                                     }
-                                    val selected = state.selectedSubtitle in files
+                                    val selected = activeSubtitle in files
                                     val name = files.minBy { it.lang.length }.lang
                                     if (files.size == 1) {
                                         DropdownMenuItem(
-                                            text = { Text(name, fontWeight = if (selected) FontWeight.Bold else null) },
+                                            text = { Text(if (selected) "✓ $name" else name) },
                                             onClick = { pick(files.first()) },
                                         )
                                         return@forEach
                                     }
                                     DropdownMenuItem(
-                                        text = { Text("$name (${files.size})", fontWeight = if (selected) FontWeight.Bold else null) },
+                                        text = { Text("${if (selected) "✓ " else ""}$name (${files.size})", fontWeight = if (selected) FontWeight.Bold else null) },
                                         trailingIcon = { Text(if (openLanguage == language) "−" else "+", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                                         onClick = { openLanguage = if (openLanguage == language) null else language },
                                     )
@@ -829,8 +858,9 @@ fun PlayerScreen(route: Route.Player, inPip: Boolean = false) {
                                             DropdownMenuItem(
                                                 text = {
                                                     Text(
-                                                        if (subtitle.lang == name) tr("{0} {1}", name, index + 1) else subtitle.lang,
-                                                        fontWeight = if (subtitle == state.selectedSubtitle) FontWeight.Bold else null,
+                                                        (if (subtitle == activeSubtitle) "✓ " else "") +
+                                                            if (subtitle.lang == name) tr("{0} {1}", name, index + 1) else subtitle.lang,
+                                                        fontWeight = if (subtitle == activeSubtitle) FontWeight.Bold else null,
                                                     )
                                                 },
                                                 onClick = { pick(subtitle) },
@@ -1151,3 +1181,6 @@ private const val NEXT_UP_MS = 30_000L
 
 /** The next episode's links start loading this long before the end */
 private const val PREFETCH_MS = 120_000L
+
+private fun SubtitleFile.languageGroup(): String =
+    langTag?.substringBefore('-')?.lowercase() ?: lang.trim().lowercase()
