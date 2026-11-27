@@ -33,6 +33,9 @@ data class Playable(
 sealed interface Route {
     data class Result(val media: MediaEntry) : Route
 
+    /** An actor's page, found on TMDB by [name] when the [id] is not known, as in an extension's cast list */
+    data class Person(val name: String, val id: Int? = null, val photoUrl: String? = null) : Route
+
     /** [index] is the item in [playlist] to start with, so next/previous episode works */
     data class Player(val media: MediaEntry, val playlist: List<Playable>, val index: Int) : Route
 }

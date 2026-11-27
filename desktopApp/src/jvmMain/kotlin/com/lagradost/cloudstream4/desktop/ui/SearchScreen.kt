@@ -2,6 +2,18 @@ package com.lagradost.cloudstream4.desktop.ui
 
 import com.lagradost.cloudstream4.desktop.data.tr
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import com.lagradost.cloudstream4.desktop.data.Tmdb
+import com.lagradost.cloudstream4.desktop.data.TmdbPerson
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,6 +80,8 @@ data class SearchState(
     val filter: SearchFilter = SearchFilter.All,
     val results: List<ProviderResults> = emptyList(),
     val pending: Int = 0,
+    /** Actors named like the search, found on TMDB */
+    val people: List<TmdbPerson> = emptyList(),
 )
 
 class SearchViewModel(private val scope: CoroutineScope) {
@@ -90,8 +104,12 @@ class SearchViewModel(private val scope: CoroutineScope) {
             filter.types == null || api.supportedTypes.any { it in filter.types }
         }
         job?.cancel()
-        _state.update { it.copy(results = emptyList(), pending = providers.size) }
+        _state.update { it.copy(results = emptyList(), pending = providers.size, people = emptyList()) }
         job = scope.launch {
+            if (filter in setOf(SearchFilter.All, SearchFilter.Movies, SearchFilter.Series)) launch(Dispatchers.IO) {
+                val people = runCatching { Tmdb.searchPeople(query).take(MAX_PEOPLE) }.onFailure { logError(it) }.getOrDefault(emptyList())
+                _state.update { it.copy(people = people) }
+            }
             providers.forEach { api ->
                 launch(Dispatchers.IO) {
                     val result = try {
@@ -168,6 +186,7 @@ fun SearchScreen(viewModel: SearchViewModel) {
         }
 
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+            if (state.people.isNotEmpty()) item(key = "people") { PeopleRow(state.people) }
             items(state.results, key = { it.provider }) { result ->
                 when {
                     result.items.isNotEmpty() -> SearchResponseRow(result.provider, result.items)
@@ -177,6 +196,40 @@ fun SearchScreen(viewModel: SearchViewModel) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+            }
+        }
+    }
+}
+
+private const val MAX_PEOPLE = 12
+
+/** Actors matching the search, each opening their page with everything they played in */
+@Composable
+private fun PeopleRow(people: List<TmdbPerson>) {
+    val navigator = LocalNavigator.current
+    Column {
+        SectionTitle(tr("Actors"))
+        LazyRow(contentPadding = PaddingValues(horizontal = 36.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(people, key = { it.id }) { person ->
+                Column(
+                    Modifier.width(128.dp).clip(RoundedCornerShape(16.dp))
+                        .clickable { navigator.push(Route.Person(person.name, person.id, person.photoUrl)) }
+                        .padding(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    RemoteImage(person.photoUrl, Modifier.size(96.dp).clip(RoundedCornerShape(50)), contentDescription = person.name)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        person.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                    )
+                    person.knownFor.firstOrNull()?.let {
+                        Text(
+                            it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                        )
+                    }
                 }
             }
         }

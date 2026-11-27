@@ -127,6 +127,7 @@ fun App(navigator: Navigator) {
                 Box(Modifier.fillMaxSize().padding(top = if (overHome) 0.dp else TopBarHeight)) {
                     when (route) {
                         is Route.Result -> stateHolder.SaveableStateProvider(route.toString()) { ResultScreen(route.media) }
+                        is Route.Person -> stateHolder.SaveableStateProvider(route.toString()) { PersonScreen(route) }
                         null -> stateHolder.SaveableStateProvider(navigator.tab.name) {
                             when (navigator.tab) {
                                 Tab.Home -> HomeScreen(home)

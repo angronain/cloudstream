@@ -41,6 +41,32 @@ data class TmdbDetails(
 
 data class TmdbEpisode(val number: Int, val name: String)
 
+/** An actor, or someone else who worked on movies and shows */
+data class TmdbPerson(
+    val id: Int,
+    val name: String,
+    val profilePath: String? = null,
+    /** Acting, Directing... */
+    val department: String? = null,
+    /** A few of their best known titles */
+    val knownFor: List<String> = emptyList(),
+) {
+    val photoUrl: String? get() = profilePath?.let { "https://image.tmdb.org/t/p/w185$it" }
+}
+
+/** A title someone played in, with their role */
+data class TmdbCredit(val title: TmdbTitle, val character: String?, val episodes: Int?)
+
+data class TmdbPersonDetails(
+    val person: TmdbPerson,
+    val biography: String?,
+    val birthday: String?,
+    val deathday: String?,
+    val birthplace: String?,
+    /** Released titles they acted in, newest first */
+    val credits: List<TmdbCredit>,
+)
+
 /** The TMDB api, with the key the Android app uses */
 object Tmdb {
     private const val API_KEY = "e6333b32409e02a4a6eba6fb7ff866bb"
@@ -88,6 +114,103 @@ object Tmdb {
         }
         // The year can be off by one between sites
         return results.firstOrNull { year == null || it.year == null || kotlin.math.abs(it.year - year) <= 1 } ?: results.firstOrNull()
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class PersonResult(
+        val id: Int,
+        val name: String = "",
+        @JsonProperty("profile_path") val profilePath: String? = null,
+        @JsonProperty("known_for_department") val department: String? = null,
+        @JsonProperty("known_for") val knownFor: List<Result> = emptyList(),
+        val popularity: Double = 0.0,
+    ) {
+        fun toPerson() = TmdbPerson(id, name, profilePath, department, knownFor.mapNotNull { (it.title ?: it.name)?.takeIf(String::isNotBlank) })
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class PersonPage(val results: List<PersonResult> = emptyList())
+
+    /** People named like [query], actors first, the ones without a photo or known title are left out */
+    suspend fun searchPeople(query: String): List<TmdbPerson> {
+        val text = app.get(
+            "$HOST/search/person",
+            params = mapOf("api_key" to API_KEY, "language" to language, "query" to query, "include_adult" to "false"),
+        ).text
+        return mapper.readValue<PersonPage>(text).results
+            .filter { it.profilePath != null && it.knownFor.isNotEmpty() }
+            .sortedByDescending { if (it.department == "Acting") it.popularity + 1_000 else it.popularity }
+            .map { it.toPerson() }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class CastCredit(
+        val id: Int,
+        val title: String? = null,
+        val name: String? = null,
+        @JsonProperty("media_type") val mediaType: String? = null,
+        @JsonProperty("release_date") val releaseDate: String? = null,
+        @JsonProperty("first_air_date") val firstAirDate: String? = null,
+        @JsonProperty("poster_path") val posterPath: String? = null,
+        @JsonProperty("backdrop_path") val backdropPath: String? = null,
+        val character: String? = null,
+        @JsonProperty("episode_count") val episodes: Int? = null,
+        @JsonProperty("genre_ids") val genres: List<Int> = emptyList(),
+    )
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class CombinedCredits(val cast: List<CastCredit> = emptyList())
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private data class PersonDetails(
+        val id: Int,
+        val name: String = "",
+        val biography: String? = null,
+        val birthday: String? = null,
+        val deathday: String? = null,
+        @JsonProperty("place_of_birth") val birthplace: String? = null,
+        @JsonProperty("profile_path") val profilePath: String? = null,
+        @JsonProperty("known_for_department") val department: String? = null,
+        @JsonProperty("combined_credits") val credits: CombinedCredits = CombinedCredits(),
+    )
+
+    /** Talk shows, news and award shows, where people appear as themselves */
+    private val NOT_A_ROLE = setOf(10763, 10767)
+    private val SELF = Regex("""^(self|himself|herself|themselves)\b""", RegexOption.IGNORE_CASE)
+
+    suspend fun person(id: Int): TmdbPersonDetails {
+        val text = app.get(
+            "$HOST/person/$id",
+            params = mapOf("api_key" to API_KEY, "language" to language, "append_to_response" to "combined_credits"),
+        ).text
+        val details = mapper.readValue<PersonDetails>(text)
+        val today = java.time.LocalDate.now().toString()
+        val credits = details.credits.cast
+            .filter { it.mediaType == "movie" || it.mediaType == "tv" }
+            .filter { it.genres.none(NOT_A_ROLE::contains) && !SELF.containsMatchIn(it.character.orEmpty()) }
+            .filter { (it.releaseDate ?: it.firstAirDate).let { date -> !date.isNullOrBlank() && date <= today } }
+            // Someone with several roles in one title is listed once
+            .distinctBy { it.mediaType + it.id }
+            .sortedByDescending { it.releaseDate ?: it.firstAirDate }
+            .map { credit ->
+                val movie = credit.mediaType == "movie"
+                TmdbCredit(
+                    TmdbTitle(
+                        credit.id, movie, credit.title ?: credit.name ?: "",
+                        (credit.releaseDate ?: credit.firstAirDate)?.take(4)?.toIntOrNull(), credit.posterPath, credit.backdropPath,
+                    ),
+                    credit.character?.takeIf { it.isNotBlank() },
+                    credit.episodes.takeIf { !movie },
+                )
+            }
+        return TmdbPersonDetails(
+            TmdbPerson(details.id, details.name, details.profilePath, details.department),
+            details.biography?.takeIf { it.isNotBlank() },
+            details.birthday,
+            details.deathday,
+            details.birthplace,
+            credits,
+        )
     }
 
     suspend fun recommendations(title: TmdbTitle): List<TmdbTitle> =

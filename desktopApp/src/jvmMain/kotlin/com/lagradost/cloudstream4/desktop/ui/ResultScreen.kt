@@ -453,7 +453,12 @@ private fun ResultContent(media: MediaEntry, response: LoadResponse) {
                     )
                     LazyRow(contentPadding = PaddingValues(horizontal = 40.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         items(actors.take(30)) { data ->
-                            Column(Modifier.width(96.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            // Opens the actor's page with everything they played in
+                            Column(
+                                Modifier.width(96.dp).clip(RoundedCornerShape(12.dp))
+                                    .clickable { navigator.push(Route.Person(data.actor.name, photoUrl = data.actor.image)) },
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
                                 RemoteImage(data.actor.image, Modifier.size(84.dp).clip(RoundedCornerShape(50)))
                                 Spacer(Modifier.height(6.dp))
                                 Text(data.actor.name, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
