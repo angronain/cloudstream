@@ -2,6 +2,18 @@ package com.lagradost.cloudstream4.desktop.ui
 
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.collectAsState
+import com.lagradost.cloudstream4.desktop.data.ALL_SOURCES
+import com.lagradost.cloudstream4.desktop.data.AppData
+import com.lagradost.cloudstream4.desktop.generated.resources.Res
+import com.lagradost.cloudstream4.desktop.generated.resources.arrow_down
+import com.lagradost.cloudstream4.desktop.plugins.PluginManager
+import org.jetbrains.compose.resources.painterResource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -105,7 +117,11 @@ private fun PersonPage(details: TmdbPersonDetails) {
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) { PersonHeader(details) }
         item(span = { GridItemSpan(maxLineSpan) }) {
-            Row(Modifier.padding(start = 4.dp, top = 28.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 28.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 // A filter only shows when they played in both
                 val kinds = CreditFilter.entries.filter { kind -> details.credits.any(kind::matches) }
                 if (kinds.size > 2) kinds.forEach { kind ->
@@ -113,6 +129,8 @@ private fun PersonPage(details: TmdbPersonDetails) {
                 } else {
                     Text(tr("Filmography"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 }
+                Spacer(Modifier.weight(1f))
+                SourcePicker()
             }
         }
         items(shown, key = { it.title.key }) { CreditCard(it) }
@@ -177,7 +195,7 @@ private fun CreditCard(credit: TmdbCredit) {
         if (opening) return
         opening = true
         scope.launch {
-            openOnDefaultSource(credit.title.name, credit.title.year, navigator)
+            openOnDefaultSource(credit.title.name, credit.title.year, navigator, AppData.settings.value.personProvider)
             opening = false
         }
     }
@@ -195,4 +213,53 @@ private fun CreditCard(credit: TmdbCredit) {
         },
         onClick = ::open,
     )
+}
+
+/** Where the titles of actor pages open, kept for every actor */
+@Composable
+private fun SourcePicker() {
+    val settings by AppData.settings.collectAsState()
+    val providersVersion by PluginManager.providersVersion.collectAsState()
+    val providers = remember(providersVersion) { PluginManager.providers().map { it.name }.distinct().sortedBy { it.lowercase() } }
+    val default = remember(providersVersion, settings.recommendationProvider, settings.homeProvider) { defaultSourceName() }
+    // A source that was uninstalled falls back to the default
+    val chosen = settings.personProvider?.takeIf { it == ALL_SOURCES || it in providers }
+    fun choose(source: String?) = AppData.updateSettings { it.copy(personProvider = source) }
+    var expanded by remember { mutableStateOf(false) }
+    val content = MaterialTheme.colorScheme.onBackground
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(tr("Open on"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            Row(
+                Modifier.clip(RoundedCornerShape(50)).background(content.copy(alpha = 0.08f)).clickable { expanded = true }
+                    .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    when (chosen) {
+                        null -> default ?: tr("All extensions")
+                        ALL_SOURCES -> tr("All extensions")
+                        else -> chosen
+                    },
+                    style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                )
+                Icon(painterResource(Res.drawable.arrow_down), null, Modifier.size(18.dp))
+            }
+            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                @Composable
+                fun option(text: String, selected: Boolean, source: String?) = DropdownMenuItem(
+                    text = { Text(text, fontWeight = if (selected) FontWeight.Bold else null) },
+                    onClick = {
+                        expanded = false
+                        choose(source)
+                    },
+                )
+                default?.let { option(tr("Same as recommendations ({0})", it), chosen == null, null) }
+                option(tr("All extensions"), chosen == ALL_SOURCES, ALL_SOURCES)
+                HorizontalDivider()
+                providers.forEach { option(it, chosen == it, it) }
+            }
+        }
+    }
 }

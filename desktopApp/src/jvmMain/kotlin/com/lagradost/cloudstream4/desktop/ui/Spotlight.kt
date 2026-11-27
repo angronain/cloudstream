@@ -67,6 +67,7 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvSeriesSearchResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.mvvm.logError
+import com.lagradost.cloudstream4.desktop.data.ALL_SOURCES
 import com.lagradost.cloudstream4.desktop.data.AppData
 import com.lagradost.cloudstream4.desktop.data.MediaEntry
 import com.lagradost.cloudstream4.desktop.data.Tmdb
@@ -189,15 +190,21 @@ private object SpotlightCache {
 
 private fun normalized(name: String) = name.lowercase().filter { it.isLetterOrDigit() }
 
-/**
- * Opens [name] on the default source (the one chosen in Settings, or the Home source), straight on its page.
- * Searches every extension instead when that source does not have it.
- */
-suspend fun openOnDefaultSource(name: String, year: Int?, navigator: Navigator) {
-    val providers = PluginManager.providers()
+/** The extension recommendations open on: the one chosen in Settings, else the Home source */
+fun defaultSourceName(): String? = PluginManager.providers().let { providers ->
     val settings = AppData.settings.value
-    val api = providers.firstOrNull { it.name == (settings.recommendationProvider ?: settings.homeProvider) }
-        ?: providers.firstOrNull { it.hasMainPage }
+    (providers.firstOrNull { it.name == (settings.recommendationProvider ?: settings.homeProvider) }
+        ?: providers.firstOrNull { it.hasMainPage })?.name
+}
+
+/**
+ * Opens [name] on [source], by default the source recommendations open on, straight on its page.
+ * Searches every extension instead when that source does not have it, or when [source] is [ALL_SOURCES].
+ */
+suspend fun openOnDefaultSource(name: String, year: Int?, navigator: Navigator, source: String? = null) {
+    if (source == ALL_SOURCES) return navigator.searchFor(name)
+    val providers = PluginManager.providers()
+    val api = providers.firstOrNull { it.name == (source ?: defaultSourceName()) }
     val found = api?.let {
         runCatching {
             withContext(Dispatchers.IO) { withTimeout(it.searchTimeoutMs ?: 30_000L) { it.search(name, 1) } }?.items.orEmpty()

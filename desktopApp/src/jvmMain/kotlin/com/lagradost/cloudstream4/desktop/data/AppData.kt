@@ -146,6 +146,9 @@ enum class WatchList(private val english: String) {
     val title: String get() = tr(english)
 }
 
+/** A source choice meaning every extension is searched */
+const val ALL_SOURCES = "*"
+
 data class Settings(
     val theme: CloudStreamThemeMode = CloudStreamThemeMode.Dark,
     val primaryColor: CloudStreamPrimaryColor = CloudStreamPrimaryColor.NORMAL,
@@ -179,6 +182,8 @@ data class Settings(
     val recommendations: Boolean = true,
     /** The extension recommendations open on, null is the Home source */
     val recommendationProvider: String? = null,
+    /** The extension actor pages open titles on, null is the same as recommendations, [ALL_SOURCES] searches them all */
+    val personProvider: String? = null,
     /** A folder shared between computers (iCloud Drive, Dropbox...) to sync the library through, empty is off */
     val syncFolder: String = "",
     /** Shows what is playing on the Discord profile */
